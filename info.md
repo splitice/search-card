@@ -7,7 +7,7 @@ A Lovelace card that enables quick entity searching, local service shortcuts, an
 - 🔍 Quick entity search within the Home Assistant frontend
 - 🌐 Searchable shortcuts for local network services
 - ⚡ Custom actions with regex-based matching
-- 🎯 Domain filtering (include/exclude specific domains)
+- 🎯 Regex-based entity filtering
 - 🛠️ Full Lovelace visual editor support
 - 📋 Configurable result limits and placeholder text
 
@@ -26,10 +26,8 @@ A Lovelace card that enables quick entity searching, local service shortcuts, an
 | search_text      | string   | "Type to search..." | Custom placeholder text                     |
 | actions          | object   | optional            | Custom action definitions                   |
 | local_services   | object   | optional            | Searchable local service links              |
-| included_domains | string[] | optional            | Only show entities from these domains\*     |
-| excluded_domains | string[] | optional            | Hide entities from these domains\*          |
-
-\*Note: `included_domains` and `excluded_domains` cannot be used together
+| included_regex   | string[] | `["."]`             | Regexes that an entity match must match first |
+| excluded_regex   | string[] | optional            | Regexes removed after include filtering     |
 
 ### Example Configuration
 
@@ -37,20 +35,19 @@ A Lovelace card that enables quick entity searching, local service shortcuts, an
 type: custom:search-card
 max_results: 10
 search_text: "Search entities..."
-excluded_domains:
-  - automation
-  - script
+excluded_regex:
+  - battery
 ```
 
-### Domain Filtering Example
+### Regex Filtering Example
 
 Include only lights and switches:
 
 ```yaml
 type: custom:search-card
-included_domains:
-  - light
-  - switch
+included_regex:
+  - "^light\\."
+  - "^switch\\."
 ```
 
 ### Custom Actions Example
