@@ -137,24 +137,19 @@ customElements.whenDefined("card-tools").then(() => {
               type="text"
               autocomplete="off"
               icon
-              ?iconTrailing=${this._searchValue !== ""}
+              iconTrailing
               label="${this.search_text}"
             >
               <ha-icon icon="mdi:magnify" id="searchIcon" slot="leadingIcon"></ha-icon>
-              ${
-                this._searchValue !== ""
-                  ? ct.LitHtml`
-                      <ha-icon-button
-                        slot="trailingIcon"
-                        @click="${this._clearInput}"
-                        alt="Clear"
-                        title="Clear"
-                      >
-                        <ha-icon icon="mdi:close"></ha-icon>
-                      </ha-icon-button>
-                    `
-                  : ""
-              }
+              <ha-icon-button
+                slot="trailingIcon"
+                @click="${this._clearInput}"
+                alt="Clear"
+                title="Clear"
+                .style=${this._searchValue === "" ? "display: none;" : ""}
+              >
+                <ha-icon icon="mdi:close"></ha-icon>
+              </ha-icon-button>
             </ha-input>
           </div>
 
