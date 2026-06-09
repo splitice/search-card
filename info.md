@@ -1,12 +1,14 @@
 # Search Card
 
-A Lovelace card that enables quick entity searching with customizable actions.
+A Lovelace card that enables quick entity searching, local service shortcuts, and customizable actions.
 
 ## Features
 
 - 🔍 Quick entity search within the Home Assistant frontend
+- 🌐 Searchable shortcuts for local network services
 - ⚡ Custom actions with regex-based matching
 - 🎯 Domain filtering (include/exclude specific domains)
+- 🛠️ Full Lovelace visual editor support
 - 📋 Configurable result limits and placeholder text
 
 ## Prerequisites
@@ -23,6 +25,7 @@ A Lovelace card that enables quick entity searching with customizable actions.
 | max_results      | integer  | 10                  | Maximum number of search results to display |
 | search_text      | string   | "Type to search..." | Custom placeholder text                     |
 | actions          | object   | optional            | Custom action definitions                   |
+| local_services   | object   | optional            | Searchable local service links              |
 | included_domains | string[] | optional            | Only show entities from these domains\*     |
 | excluded_domains | string[] | optional            | Hide entities from these domains\*          |
 
@@ -60,6 +63,23 @@ actions:
     service: homeassistant.toggle
     service_data:
       entity_id: { 1 }
+```
+
+### Local Services Example
+
+```yaml
+type: custom:search-card
+local_services:
+  services:
+    - name: Sonarr
+      url: http://sonarr.local:8989
+      icon: mdi:television-classic
+      aliases:
+        - tv
+        - series
+        - downloads
+        - arr
+      category: media
 ```
 
 ## Issues and Troubleshooting

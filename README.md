@@ -1,14 +1,16 @@
 # Search Card
 
-A Lovelace card for Home Assistant that enables quick entity searching with customizable actions.
+A Lovelace card for Home Assistant that enables quick entity searching, local service shortcuts, and customizable actions.
 
 ![Demo of card](images/demo.gif)
 
 ## Features
 
 - 🔍 Quick entity search within the Home Assistant frontend
+- 🌐 Searchable shortcuts for local network services
 - ⚡ Custom actions with regex-based matching
 - 🎯 Domain filtering (include/exclude specific domains)
+- 🛠️ Full Lovelace visual editor support
 - 📋 Configurable result limits and placeholder text
 
 ## Installation
@@ -63,6 +65,7 @@ excluded_domains:
 | max_results      | integer  | 10                  | Maximum number of search results to display |
 | search_text      | string   | "Type to search..." | Custom placeholder text                     |
 | actions          | object   | optional            | Custom action definitions                   |
+| local_services   | object   | optional            | Searchable local service links              |
 | included_domains | string[] | optional            | Only show entities from these domains\*     |
 | excluded_domains | string[] | optional            | Hide entities from these domains\*          |
 
@@ -120,6 +123,56 @@ actions:
     service_data:
       entity_id: { 1 }
 ```
+
+### Local Services
+
+Local services let you search configured network services and open them in a new tab directly from the card.
+
+```yaml
+type: custom:search-card
+local_services:
+  services:
+    - name: Sonarr
+      url: http://sonarr.local:8989
+      icon: mdi:television-classic
+      aliases:
+        - tv
+        - series
+        - downloads
+        - arr
+      category: media
+    - name: Plex
+      url: http://plex.local:32400/web
+      icon: mdi:plex
+      aliases:
+        - movies
+        - tv
+        - media
+      category: media
+```
+
+Each service supports these fields:
+
+| Field    | Type     | Required | Description                                   |
+| -------- | -------- | -------- | --------------------------------------------- |
+| name     | string   | yes      | Display name and primary search text          |
+| url      | string   | yes      | Link opened when the result is clicked        |
+| icon     | string   | no       | MDI icon shown in the result row              |
+| aliases  | string[] | no       | Additional search terms                       |
+| category | string   | no       | Grouping label that is also included in search |
+
+### Visual Editor
+
+The card supports the Lovelace visual editor for all current options, including:
+
+- `search_text`
+- `max_results`
+- `included_domains`
+- `excluded_domains`
+- `actions`
+- `local_services.services`
+
+If both `included_domains` and `excluded_domains` are set, the visual editor is disabled until only one of them is used.
 
 ## Troubleshooting
 
