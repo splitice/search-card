@@ -42,6 +42,8 @@ customElements.whenDefined("card-tools").then(() => {
 
   const hasItems = (value) => Array.isArray(value) && value.length > 0;
   const cloneValue = (value) => JSON.parse(JSON.stringify(value));
+  const SEARCH_PRIORITY_LABEL = "search_priority";
+  const SEARCH_HIDDEN_LABEL = "search_hidden";
   const parseListInput = (value) =>
     value
       .split(/\n|,/)
@@ -69,7 +71,6 @@ customElements.whenDefined("card-tools").then(() => {
         _results: { type: Array },
         _activeActions: { type: Array },
         _searchValue: { type: String },
-        _lastHass: { type: Object },
       };
     }
 
@@ -89,10 +90,30 @@ customElements.whenDefined("card-tools").then(() => {
       this._results = [];
       this._activeActions = [];
       this._searchValue = "";
-      this._lastHass = null;
+      this._hass = null;
+      this._searchPriorityEntityIds = new Set();
+      this._searchHiddenEntityIds = new Set();
+      this._registryMetadataRequest = null;
       this._debouncedSearch = this._debounce((searchText) => {
         this._performSearch(searchText);
       }, 100);
+    }
+
+    get hass() {
+      return this._hass;
+    }
+
+    set hass(value) {
+      const oldHass = this._hass;
+      this._hass = value;
+      this.requestUpdate("hass", oldHass);
+
+      if (value?.connection !== oldHass?.connection) {
+        this._searchPriorityEntityIds = new Set();
+        this._searchHiddenEntityIds = new Set();
+        this._registryMetadataRequest = null;
+        this._refreshSearchLabelEntityIds();
+      }
     }
 
     shouldUpdate(changedProps) {
@@ -266,7 +287,9 @@ customElements.whenDefined("card-tools").then(() => {
           excludedRegexes
         );
 
-        this._results = localServiceResults.concat(entityResults);
+        this._results = this._sortResults(
+          localServiceResults.concat(entityResults)
+        );
         this._activeActions = this._getActivatedActions(searchText);
       } catch (err) {
         console.warn(err);
@@ -277,6 +300,69 @@ customElements.whenDefined("card-tools").then(() => {
 
     _compileRegexList(patterns) {
       return patterns.map((pattern) => new RegExp(pattern, "i"));
+    }
+
+    async _refreshSearchLabelEntityIds() {
+      const connection = this.hass?.connection;
+      if (!connection) {
+        this._searchPriorityEntityIds = new Set();
+        this._searchHiddenEntityIds = new Set();
+        return;
+      }
+
+      const requestToken = {};
+      this._registryMetadataRequest = requestToken;
+
+      try {
+        const [labels, entityRegistryDisplay] = await Promise.all([
+          connection.sendMessagePromise({
+            type: "config/label_registry/list",
+          }),
+          connection.sendMessagePromise({
+            type: "config/entity_registry/list_for_display",
+          }),
+        ]);
+
+        if (this._registryMetadataRequest !== requestToken) {
+          return;
+        }
+
+        const labelIdsByName = new Map(
+          (Array.isArray(labels) ? labels : [])
+            .filter((label) => typeof label?.name === "string")
+            .map((label) => [label.name.trim().toLowerCase(), label.label_id])
+        );
+        const searchPriorityLabelId = labelIdsByName.get(SEARCH_PRIORITY_LABEL);
+        const searchHiddenLabelId = labelIdsByName.get(SEARCH_HIDDEN_LABEL);
+        const searchPriorityEntityIds = new Set();
+        const searchHiddenEntityIds = new Set();
+
+        for (const entry of entityRegistryDisplay?.entities || []) {
+          if (typeof entry?.ei !== "string" || !Array.isArray(entry.lb)) {
+            continue;
+          }
+
+          if (searchPriorityLabelId && entry.lb.includes(searchPriorityLabelId)) {
+            searchPriorityEntityIds.add(entry.ei);
+          }
+
+          if (searchHiddenLabelId && entry.lb.includes(searchHiddenLabelId)) {
+            searchHiddenEntityIds.add(entry.ei);
+          }
+        }
+
+        this._searchPriorityEntityIds = searchPriorityEntityIds;
+        this._searchHiddenEntityIds = searchHiddenEntityIds;
+        if (this._searchValue) {
+          this._performSearch(this._searchValue);
+        }
+      } catch (err) {
+        if (this._registryMetadataRequest === requestToken) {
+          this._searchPriorityEntityIds = new Set();
+          this._searchHiddenEntityIds = new Set();
+        }
+        console.warn("Search Card: unable to load label metadata", err);
+      }
     }
 
     _getEntityResults(searchRegex, includedRegexes, excludedRegexes) {
@@ -292,7 +378,8 @@ customElements.whenDefined("card-tools").then(() => {
         if (
           this._matchesAnyRegex(searchableFields, [searchRegex]) &&
           this._matchesAnyRegex(searchableFields, includedRegexes) &&
-          !this._matchesAnyRegex(searchableFields, excludedRegexes)
+          !this._matchesAnyRegex(searchableFields, excludedRegexes) &&
+          !this._searchHiddenEntityIds.has(entity_id)
         ) {
           results.push({
             type: "entity",
@@ -302,6 +389,35 @@ customElements.whenDefined("card-tools").then(() => {
       }
 
       return results.sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+    }
+
+    _sortResults(results) {
+      return results
+        .map((result, index) => ({
+          result: result,
+          index: index,
+        }))
+        .sort((a, b) => {
+          const rankDifference =
+            this._getResultRank(a.result) - this._getResultRank(b.result);
+          return rankDifference !== 0 ? rankDifference : a.index - b.index;
+        })
+        .map(({ result }) => result);
+    }
+
+    _getResultRank(result) {
+      if (
+        result.type === "entity" &&
+        this._searchPriorityEntityIds.has(result.entity_id)
+      ) {
+        return 0;
+      }
+
+      if (result.type === "local_service") {
+        return 1;
+      }
+
+      return 2;
     }
 
     _getLocalServiceResults(searchRegex) {
