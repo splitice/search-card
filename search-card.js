@@ -133,23 +133,12 @@ customElements.whenDefined("card-tools").then(() => {
               id="searchText"
               .value="${this._searchValue}"
               @input="${this._valueChanged}"
-              no-label-float
-              type="text"
+              type="search"
               autocomplete="off"
-              icon
-              iconTrailing
-              label="${this.search_text}"
+              with-clear
+              placeholder="${this.search_text}"
             >
-              <ha-icon icon="mdi:magnify" id="searchIcon" slot="leadingIcon"></ha-icon>
-              <ha-icon-button
-                slot="trailingIcon"
-                @click="${this._clearInput}"
-                alt="Clear"
-                title="Clear"
-                .style=${this._searchValue === "" ? "display: none;" : ""}
-              >
-                <ha-icon icon="mdi:close"></ha-icon>
-              </ha-icon-button>
+              <ha-icon icon="mdi:magnify" id="searchIcon" slot="start"></ha-icon>
             </ha-input>
           </div>
 
