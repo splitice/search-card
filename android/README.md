@@ -140,6 +140,15 @@ GitHub Actions builds signed debug/release downloads on push/manual runs and run
 
 Normal CI tests use simulated service calls and do not operate actual devices. The optional `LiveAccountTest` signs in through the actual Android login WebView, fetches the selected dashboard and entity states, checks that native controls are available, reconnects with cached data, checks that UID network counters stop changing after dismissal, and logs out. It does not invoke entity services. To run it in Actions, set the encrypted repository secret `ANDROID_RUNTIME_TEST_ACCOUNT` to a JSON object with `dashboard`, `username`, and `password` strings, then manually run the Android workflow with **live-account** enabled. Use a dedicated test account without MFA for this automated smoke test; MFA remains a manual acceptance check. The runner places credentials in private app storage, the test deletes the file after reading it, and boot log collection stops before authentication. No account is embedded in the APK. Locally, provide the same JSON as `HA_RUNTIME_ACCOUNT` and run `bash tools/run-device-tests.sh` with a booted Android 17 emulator; do not commit the account JSON or print it in shell tracing.
 
+The reviewed API 37 image (`CE2A.260420.019`, Google APIs revision 6) has a graphics-mapper incompatibility: SurfaceFlinger aborts with `Assertion failed: !rcEnc->featureInfo()->hasReadColorBufferDma`, causing framework restarts even after `sys.boot_completed=1`. CI disables the host feature that advertises this DMA path. Use the same workaround locally (replace `YOUR_API_37_AVD` with your AVD name):
+
+```sh
+emulator -avd YOUR_API_37_AVD -accel on -gpu swiftshader \
+  -feature -HasSharedSlotsHostMemoryAllocator -no-snapshot
+```
+
+This changes the emulator's graphics transport; it does not disable SystemUI or alter the APK. Recheck the workaround when updating the emulator or system image.
+
 Before installing a release for daily use, perform this manual matrix on Android 17 (or an API 37 emulator). It requires your own server/login:
 
 | Scenario | Expected result |

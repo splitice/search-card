@@ -10,13 +10,14 @@ if [[ -n "${HA_RUNTIME_ACCOUNT:-}" ]]; then
   # Stop diagnostic collection before authentication; logcat can include callback URLs.
   pkill -f '^adb logcat' || true
   adb logcat -c
+  ./gradlew installDebug --console=plain
   cleanup() {
     adb shell run-as com.splitice.searchcard rm -f files/runtime-account.json || true
     unset HA_RUNTIME_ACCOUNT
   }
   trap cleanup EXIT
   printf '%s' "$HA_RUNTIME_ACCOUNT" | adb shell run-as com.splitice.searchcard sh -c \
-    '"umask 077; cat > files/runtime-account.json"'
+    '"umask 077; mkdir -p files; cat > files/runtime-account.json"'
   unset HA_RUNTIME_ACCOUNT
   ./gradlew connectedDebugAndroidTest --console=plain \
     -Pandroid.testInstrumentationRunnerArguments.class=com.splitice.searchcard.LiveAccountTest

@@ -28,6 +28,8 @@ jobs:
         with:
           cmdline-tools-version: '16111833'
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
       - name: Install SDK
         run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'
       - name: Build, lint, and compare with web card
@@ -127,6 +129,8 @@ jobs:
         with:
           cmdline-tools-version: '16111833'
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
       - name: Install Android 17 SDK
         run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'
       - name: Enable KVM
@@ -145,6 +149,7 @@ jobs:
           profile: pixel_2
           ram-size: 4096M
           heap-size: 512M
+          disk-size: 8G
           disable-linux-hw-accel: false
           # API 37's mapper.ranchu aborts if the host advertises read-color-buffer DMA.
           emulator-options: -no-window -gpu swiftshader -feature -HasSharedSlotsHostMemoryAllocator -no-snapshot -noaudio -no-boot-anim -accel on -no-metrics -show-kernel

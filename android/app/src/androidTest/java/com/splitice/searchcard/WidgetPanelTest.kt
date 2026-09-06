@@ -2,6 +2,9 @@ package com.splitice.searchcard
 
 import android.content.Context
 import android.content.Intent
+import android.app.UiModeManager
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Rect
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -69,6 +72,34 @@ class WidgetPanelTest {
             compose.waitUntil(30_000) { compose.onAllNodesWithTag("widget-search-field").fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithContentDescription("Close search").assertIsDisplayed()
         }
+    }
+
+    @Test fun rotationDiscardsOldCoordinatesAndThemeChangesKeepTheQuery() = withAccount { context ->
+        val modes = context.getSystemService(UiModeManager::class.java)
+        val originalMode = modes.nightMode
+        val intent = Intent(context, MainActivity::class.java).setAction(SearchWidget.ACTION_OPEN_WIDGET)
+            .apply { sourceBounds = widgetBounds(context) }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            ActivityScenario.launch<MainActivity>(intent).use { scenario ->
+                waitForField()
+                compose.onNode(hasSetTextAction()).performTextInput("kitchen")
+                scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+                compose.waitUntil(30_000) {
+                    context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+                        compose.onAllNodesWithTag("widget-search-field").fetchSemanticsNodes().isEmpty()
+                }
+                compose.onNode(hasSetTextAction()).assertTextContains("kitchen")
+                scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+                compose.waitUntil(30_000) { context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT }
+                for (mode in listOf(UiModeManager.MODE_NIGHT_YES, UiModeManager.MODE_NIGHT_NO)) {
+                    modes.setApplicationNightMode(mode)
+                    val expected = if (mode == UiModeManager.MODE_NIGHT_YES) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+                    compose.waitUntil(30_000) { context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == expected }
+                    compose.onNode(hasSetTextAction()).assertTextContains("kitchen")
+                    compose.onNodeWithContentDescription("Close search").assertIsDisplayed()
+                }
+            }
+        } finally { modes.setApplicationNightMode(originalMode) }
     }
 
     private fun waitForField() {
