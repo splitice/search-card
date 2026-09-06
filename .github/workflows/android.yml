@@ -154,7 +154,10 @@ jobs:
           disable-linux-hw-accel: false
           emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -accel on -no-metrics -show-kernel
           disable-animations: true
-          pre-emulator-launch-script: mkdir -p android/device-diagnostics; nohup timeout 1200 adb logcat -b all -v threadtime > android/device-diagnostics/logcat.txt 2>&1 &
+          pre-emulator-launch-script: |
+            mkdir -p android/device-diagnostics
+            python3 android/tools/emulator-renderer-compat.py > android/device-diagnostics/renderer.txt
+            nohup timeout 1200 adb logcat -b all -v threadtime > android/device-diagnostics/logcat.txt 2>&1 &
           script: |
             adb shell getprop ro.build.version.sdk | grep -qx 37
             adb shell getprop ro.build.fingerprint > android/device-diagnostics/fingerprint.txt
