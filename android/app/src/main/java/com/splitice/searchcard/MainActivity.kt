@@ -33,8 +33,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -258,6 +256,7 @@ private fun PanelResults(
                                 model.callService(key, action.service, action.data)
                             },
                         )
+                        state.actionErrors[key]?.let { ActionFailure(it) }
                     }
                 }
             }, afterResults = {
@@ -285,47 +284,13 @@ private fun PanelResults(
                     leadingContent = if (compact) null else ({ Icon(iconFor(result.panel.icon, "navigation"), null) }),
                     modifier = Modifier.clickable { openNavigation(result.panel.path) },
                 )
-                is SearchResult.Entity -> EntityRow(result.id, state, model, openEntity, compact)
+                is SearchResult.Entity -> EntityRow(result.id, state, openEntity, model::callService, compact)
             }
         }
     }
 }
 
-@Composable
-private fun EntityRow(id: String, state: PanelState, model: SearchViewModel, openEntity: (String) -> Unit, compact: Boolean) {
-    val entity = state.snapshot?.states?.get(id) as? JsonObject ?: return
-    val domain = id.substringBefore('.')
-    val entityState = entity.text("state")
-    val entityName = entity.obj("attributes").text("friendly_name", id)
-    val key = "entity:$id"
-    val enabled = state.connected && entityState !in listOf("unavailable", "unknown") && key !in state.busyActions
-    val controls: @Composable () -> Unit = {
-        when (domain) {
-            "light", "switch", "input_boolean" -> Switch(entityState == "on", { on ->
-                model.callService(key, "$domain.${if (on) "turn_on" else "turn_off"}", buildJsonObject { put("entity_id", id) })
-            }, enabled = enabled, modifier = Modifier.semantics { contentDescription = "Toggle $entityName" })
-            "scene", "script" -> TextButton(onClick = {
-                model.callService(key, "$domain.turn_on", buildJsonObject { put("entity_id", id) })
-            }, enabled = enabled) { Text(if (key in state.busyActions) "Sending…" else "Run") }
-            else -> Icon(Icons.Default.ChevronRight, "Entity details")
-        }
-    }
-    Column(Modifier.clickable { openEntity(id) }) {
-        ListItem(
-            headlineContent = { Text(entityName) },
-            supportingContent = { Text("$entityState${entity.obj("attributes").text("unit_of_measurement").let { if (it.isEmpty()) "" else " $it" }}", maxLines = 1) },
-            leadingContent = if (compact) null else ({ Icon(iconFor(entity.obj("attributes").text("icon"), domain), null) }),
-            trailingContent = if (compact) null else controls,
-        )
-        if (compact) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(iconFor(entity.obj("attributes").text("icon"), domain), null)
-            Spacer(Modifier.weight(1f))
-            controls()
-        }
-    }
-}
-
-private fun iconFor(mdi: String, domain: String): ImageVector = when (mdi.removePrefix("mdi:")) {
+internal fun iconFor(mdi: String, domain: String): ImageVector = when (mdi.removePrefix("mdi:")) {
     "television-classic", "television", "plex" -> Icons.Default.Tv
     "server-network", "server", "web" -> Icons.Default.Dns
     "progress-download", "download" -> Icons.Default.Download
@@ -343,6 +308,10 @@ private fun iconFor(mdi: String, domain: String): ImageVector = when (mdi.remove
     else -> when (domain) {
         "light" -> Icons.Default.Lightbulb
         "switch", "input_boolean" -> Icons.Default.PowerSettingsNew
+        "button", "input_button" -> Icons.Default.TouchApp
+        "select", "input_select" -> Icons.Default.ArrowDropDownCircle
+        "text", "input_text" -> Icons.Default.TextFields
+        "number", "input_number" -> Icons.Default.Numbers
         "scene" -> Icons.Default.Palette
         "script" -> Icons.Default.PlayArrow
         "climate" -> Icons.Default.Thermostat

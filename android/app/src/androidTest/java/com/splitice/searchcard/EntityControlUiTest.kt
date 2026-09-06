@@ -1,0 +1,120 @@
+package com.splitice.searchcard
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.dp
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.splitice.searchcard.core.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.json.*
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class EntityControlUiTest {
+    @get:Rule val compose = createComposeRule()
+    private val domains = listOf("light", "switch", "input_boolean", "scene", "script")
+    private fun ready() = PanelState(connected = true, snapshot = Snapshot(
+        states = buildJsonObject {
+            for (domain in domains) put("$domain.test", buildJsonObject {
+                put("state", if (domain == "scene") "unknown" else "off")
+                put("attributes", buildJsonObject { put("friendly_name", "Example $domain") })
+            })
+        }, services = buildJsonObject {
+            for (domain in domains) put(domain, buildJsonObject {
+                put("turn_on", buildJsonObject {}); put("turn_off", buildJsonObject {})
+            })
+        },
+    ))
+
+    @Test fun everySupportedDomainHasASecondRowControlAtNarrowWidgetWidth() {
+        val calls = mutableListOf<Pair<String, JsonElement>>()
+        val details = mutableListOf<String>()
+        compose.setContent {
+            MaterialTheme {
+                Column(Modifier.width(180.dp).height(380.dp).verticalScroll(rememberScrollState())) {
+                    for (domain in domains) EntityRow("$domain.test", ready(), details::add,
+                        { _, service, data -> calls += service to data }, compact = true)
+                }
+            }
+        }
+        for (domain in domains) {
+            val id = "$domain.test"
+            compose.onNodeWithTag("entity-row:$id").performScrollTo()
+            val name = compose.onNodeWithTag("entity-name:$id", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val value = compose.onNodeWithTag("entity-value:$id").fetchSemanticsNode().boundsInRoot
+            val control = compose.onNodeWithTag("entity-control:$id")
+            control.assertIsDisplayed().assertIsEnabled()
+            val bounds = control.fetchSemanticsNode().boundsInRoot
+            assertTrue("Name must be above the value/control row", name.bottom <= minOf(value.top, bounds.top))
+            assertTrue("Value and control must share the second row", value.center.y in bounds.top..bounds.bottom)
+            control.performTouchInput { click() }
+            assertEquals("$domain.turn_on", calls.last().first)
+            assertEquals(id, calls.last().second.jsonObject.text("entity_id"))
+        }
+        assertEquals(5, calls.size)
+        assertTrue("Controls must not launch Companion", details.isEmpty())
+        compose.onNodeWithTag("entity-name:script.test", useUnmergedTree = true).performTouchInput { click() }
+        assertEquals(listOf("script.test"), details)
+    }
+
+    @Test fun pendingCallsDisableTheControlAndFailuresAppearOnTheSameResult() {
+        val state = MutableStateFlow(ready())
+        val runner = ServiceCalls(state)
+        val response = CompletableDeferred<Unit>()
+        var sent = 0
+        var opened = 0
+        compose.setContent {
+            val current by state.collectAsState()
+            val scope = rememberCoroutineScope()
+            MaterialTheme {
+                Box(Modifier.width(320.dp)) {
+                    EntityRow("light.test", current, { opened++ }, { key, service, data ->
+                        runner.submit(scope, key, service, data) { sent++; response.await() }
+                    }, compact = false)
+                }
+            }
+        }
+        val control = compose.onNodeWithTag("entity-control:light.test")
+        control.performTouchInput { click() }
+        control.assertIsNotEnabled()
+        compose.onNodeWithText("Sending…").assertIsDisplayed()
+        control.performTouchInput { click() }
+        compose.runOnIdle { assertEquals(1, sent); assertEquals(0, opened); response.completeExceptionally(HaCommandError("Not permitted")) }
+        compose.onNodeWithText("Action failed: Not permitted").assertIsDisplayed()
+        control.assertIsEnabled()
+        compose.runOnIdle { assertEquals(1, sent) }
+    }
+
+    @Test fun cachedAndUnavailableEntitiesKeepVisibleDisabledControls() {
+        var state by mutableStateOf(ready().copy(connected = false))
+        var opened = 0
+        var sent = 0
+        compose.setContent {
+            MaterialTheme {
+                Box(Modifier.width(180.dp)) {
+                    EntityRow("switch.test", state, { opened++ }, { _, _, _ -> sent++ }, compact = true)
+                }
+            }
+        }
+        val control = compose.onNodeWithTag("entity-control:switch.test")
+        control.assertIsDisplayed().assertIsNotEnabled().performTouchInput { click() }
+        compose.runOnIdle {
+            assertEquals(0, opened); assertEquals(0, sent)
+            val snapshot = ready().snapshot!!
+            state = ready().copy(snapshot = snapshot.copy(states = JsonObject(snapshot.states +
+                ("switch.test" to buildJsonObject { put("state", "unavailable") }))))
+        }
+        control.assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Unavailable", substring = false).assertIsDisplayed()
+    }
+}

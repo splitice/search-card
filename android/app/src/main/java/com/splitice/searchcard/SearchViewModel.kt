@@ -19,6 +19,7 @@ data class PanelState(
     val needsLogin: Boolean = false,
     val choices: List<CardCandidate> = emptyList(),
     val busyActions: Set<String> = emptySet(),
+    val actionErrors: Map<String, String> = emptyMap(),
 )
 
 internal fun initialPanelState(hasDashboard: Boolean, hasSession: Boolean): PanelState = when {
@@ -43,6 +44,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private var started = false
     private var accountEpoch = 0
     val state = MutableStateFlow(initialPanelState(storage.settings.dashboard.isNotBlank(), storage.hasSavedSession))
+    private val serviceCalls = ServiceCalls(state)
     val query = MutableStateFlow("")
     private val engine = SearchEngine()
     @OptIn(FlowPreview::class)
@@ -227,18 +229,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
     fun callService(key: String, service: String, data: JsonElement) {
         val session = socket ?: return
-        if (!state.value.connected || key in state.value.busyActions) return
         val owner = foreground ?: return
-        state.update { it.copy(busyActions = it.busyActions + key, error = null) }
-        viewModelScope.launch(owner) {
-            try {
-                val parts = service.split('.')
-                session.request("call_service", buildJsonObject {
-                    put("domain", parts[0]); put("service", parts[1]); put("service_data", data)
-                })
-            } catch (error: CancellationException) { throw error }
-            catch (error: Exception) { reportError("Action was not confirmed. Check its result before retrying. ${error.message}") }
-            finally { state.update { it.copy(busyActions = it.busyActions - key) } }
+        serviceCalls.submit(CoroutineScope(viewModelScope.coroutineContext + owner), key, service, data) { fields ->
+            session.request("call_service", fields)
         }
     }
     override fun onCleared() { stop(); http.dispatcher.cancelAll(); http.connectionPool.evictAll() }
