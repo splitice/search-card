@@ -134,10 +134,23 @@ jobs:
           api-level: '37.0'
           target: google_apis
           arch: x86_64
+          emulator-build: '16195039' # Emulator 37.2.7
+          profile: pixel_2
+          ram-size: 4096M
+          heap-size: 512M
+          disable-linux-hw-accel: false
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -accel on -no-metrics -show-kernel
           disable-animations: true
-          script: cd android && ./gradlew connectedDebugAndroidTest --console=plain
+          pre-emulator-launch-script: mkdir -p android/device-diagnostics; nohup timeout 1200 adb logcat -b all -v threadtime > android/device-diagnostics/logcat.txt 2>&1 &
+          script: |
+            adb shell getprop ro.build.version.sdk | grep -qx 37
+            adb shell getprop ro.build.fingerprint > android/device-diagnostics/fingerprint.txt
+            cd android && ./gradlew connectedDebugAndroidTest --console=plain
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: device-reports-api-37
-          path: android/app/build/reports/androidTests/
+          path: |
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/
+            android/device-diagnostics/

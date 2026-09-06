@@ -7,3 +7,4 @@ signing.properties
 signing-private/
 .idea/
 *.iml
+device-diagnostics/
