@@ -296,6 +296,8 @@ internal fun iconFor(mdi: String, domain: String): ImageVector = when (mdi.remov
     "progress-download", "download" -> Icons.Default.Download
     "lamp", "lightbulb" -> Icons.Default.Lightbulb
     "power", "toggle-switch" -> Icons.Default.PowerSettingsNew
+    "lock", "lock-outline" -> Icons.Default.Lock
+    "lock-open", "lock-open-outline" -> Icons.Default.LockOpen
     "lightning-bolt" -> Icons.Default.Bolt
     "chart-box" -> Icons.Default.BarChart
     "format-list-bulleted", "clipboard-list" -> Icons.AutoMirrored.Filled.List
@@ -314,6 +316,7 @@ internal fun iconFor(mdi: String, domain: String): ImageVector = when (mdi.remov
         "number", "input_number" -> Icons.Default.Numbers
         "scene" -> Icons.Default.Palette
         "script" -> Icons.Default.PlayArrow
+        "lock" -> Icons.Default.Lock
         "climate" -> Icons.Default.Thermostat
         "media_player" -> Icons.Default.Speaker
         "cover" -> Icons.Default.Blinds

@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -26,6 +29,7 @@ internal fun EntityRow(
     val key = "entity:$id"
     val control = entityControl(id, state)
     val error = state.actionErrors[key]
+    var requestingCode by remember(id, control?.service, control?.disabledReason) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().testTag("entity-row:$id")) {
         // Only the details area navigates. Tapping disabled controls or the space
         // around them must never launch Companion and dismiss the native panel.
@@ -36,7 +40,7 @@ internal fun EntityRow(
             Text(name, Modifier.weight(1f).testTag("entity-name:$id"), style = MaterialTheme.typography.bodyLarge)
             Icon(Icons.Default.ChevronRight, "Entity details")
         }
-        if (control != null && control.kind !in setOf(ControlKind.TOGGLE, ControlKind.ACTION)) {
+        if (control != null && control.kind !in setOf(ControlKind.TOGGLE, ControlKind.ACTION, ControlKind.LOCK)) {
             Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
                 EntityValueEditor(id, name, attributes.text("unit_of_measurement"), control) { data ->
                     callService(key, control.service, data)
@@ -62,7 +66,10 @@ internal fun EntityRow(
                         )
                     } else {
                         FilledTonalButton(
-                            onClick = { callService(key, control.service, control.data) },
+                            onClick = {
+                                if (control.lockCodePattern != null) requestingCode = true
+                                else callService(key, control.service, control.data)
+                            },
                             enabled = control.disabledReason == null,
                             modifier = Modifier.testTag("entity-control:$id").semantics { contentDescription = "${control.label} $name" },
                         ) { Text(control.label) }
@@ -70,8 +77,14 @@ internal fun EntityRow(
                 }
             }
         }
-        if (error != null) ActionFailure(if (control?.text?.password == true)
-            "The password update was not confirmed. Check its result before retrying." else error)
+        if (requestingCode && control != null && control.disabledReason == null) {
+            LockCodeDialog(name, control, dismiss = { requestingCode = false }) { code ->
+                requestingCode = false
+                callService(key, control.service, JsonObject(control.data + ("code" to JsonPrimitive(code))))
+            }
+        }
+        if (error != null) ActionFailure(if (control?.text?.password == true || control?.lockCodePattern != null)
+            "The protected action was not confirmed. Check its result before retrying." else error)
     }
 }
 
@@ -80,4 +93,17 @@ internal fun ActionFailure(message: String) {
     Text(message, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
         .semantics { liveRegion = LiveRegionMode.Polite },
         color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+}
+
+/** Codes only live in this dialog's memory, never saved state or the entity snapshot. */
+@Composable
+private fun LockCodeDialog(name: String, control: EntityControl, dismiss: () -> Unit, submit: (String) -> Unit) {
+    var code by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = dismiss, title = { Text("${control.label} $name") },
+        text = { OutlinedTextField(code, { code = it }, label = { Text("Lock code") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = Modifier.testTag("lock-code")) },
+        confirmButton = { TextButton(onClick = { submit(code) }, enabled = code.isNotEmpty()) { Text(control.label) } },
+        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } })
 }

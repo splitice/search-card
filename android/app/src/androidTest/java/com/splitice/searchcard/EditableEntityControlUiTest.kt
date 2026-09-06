@@ -1,11 +1,14 @@
 package com.splitice.searchcard
 
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -105,6 +108,52 @@ class EditableEntityControlUiTest {
             val number = calls.single().second.jsonObject["value"]!!.jsonPrimitive
             assertFalse(number.isString)
             assertTrue(number.int in 1..10)
+        }
+    }
+
+    @Test fun sliderIgnoresTapsJitterAndVerticalScrolling() {
+        val id = "input_number.test"
+        lateinit var scroll: androidx.compose.foundation.ScrollState
+        compose.setContent {
+            MaterialTheme {
+                scroll = rememberScrollState()
+                Column(Modifier.width(280.dp).height(300.dp).verticalScroll(scroll)) {
+                    Spacer(Modifier.height(80.dp))
+                    EntityRow(id, state(id, "0", """{"min":0,"max":10,"step":1,"mode":"slider"}"""),
+                        {}, { _, service, data -> calls += service to data }, compact = true)
+                    Spacer(Modifier.height(900.dp))
+                }
+            }
+        }
+        val slider = compose.onNodeWithTag("entity-control:$id")
+        slider.performTouchInput { click(Offset(width * .8f, center.y)) }
+        slider.performTouchInput {
+            down(center); moveBy(Offset(8f, 2f)); up()
+        }
+        compose.runOnIdle { assertTrue(calls.isEmpty()) }
+        slider.performTouchInput {
+            swipe(Offset(width * .5f, center.y), Offset(width * .55f, -120f), 350)
+        }
+        compose.runOnIdle {
+            assertTrue("Scrolling over a slider must not send a service call", calls.isEmpty())
+            assertTrue("The enclosing results must scroll", scroll.value > 0)
+        }
+    }
+
+    @Test fun cancelledSliderDragRestoresValueAndAccessibilityCanStillAdjust() {
+        val id = "input_number.test"
+        row(id, state(id, "0", """{"min":0,"max":10,"step":1,"mode":"slider"}"""))
+        val slider = compose.onNodeWithTag("entity-control:$id")
+        slider.performTouchInput {
+            down(Offset(width * .1f, center.y)); moveTo(Offset(width * .9f, center.y))
+        }
+        compose.runOnIdle { assertTrue(calls.isEmpty()) }
+        slider.performTouchInput { cancel() }
+        compose.onNodeWithTag("entity-value:$id").assertTextEquals("0")
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(.5f) }
+        compose.runOnIdle {
+            assertEquals(1, calls.size)
+            assertEquals(JsonPrimitive(5), calls.single().second.jsonObject["value"])
         }
     }
 

@@ -9,12 +9,30 @@ internal fun controlState(id: String, value: String = "off", connected: Boolean 
     return PanelState(connected = connected, snapshot = Snapshot(
         states = buildJsonObject { put(id, buildJsonObject { put("state", value); put("attributes", attributes) }) },
         services = buildJsonObject { put(domain, buildJsonObject {
-            for (service in listOf("turn_on", "turn_off", "press", "set_value", "select_option")) put(service, buildJsonObject {})
+            for (service in listOf("turn_on", "turn_off", "press", "set_value", "select_option", "lock", "unlock")) put(service, buildJsonObject {})
         }) },
     ))
 }
 
 class EntityControlTest {
+    @Test fun `locks select explicit lock and unlock actions from confirmed state`() {
+        for ((value, action) in listOf("unlocked" to "lock", "open" to "lock", "locked" to "unlock")) {
+            val control = entityControl("lock.front_door", controlState("lock.front_door", value))!!
+            assertEquals(ControlKind.LOCK, control.kind)
+            assertEquals("lock.$action", control.service)
+            assertEquals("lock.front_door", control.data.text("entity_id"))
+            assertNull(control.disabledReason)
+        }
+        for (value in listOf("locking", "unlocking", "opening", "jammed", "unknown", "unavailable")) {
+            assertNotNull(entityControl("lock.front_door", controlState("lock.front_door", value))!!.disabledReason)
+        }
+        val state = controlState("lock.front_door", "locked", attributes = buildJsonObject { put("code_format", "[0-9]{4}") })
+        assertEquals("[0-9]{4}", entityControl("lock.front_door", state)!!.lockCodePattern)
+        assertNotNull(entityControl("lock.front_door", state.copy(connected = false))!!.disabledReason)
+        assertNotNull(entityControl("lock.front_door", state.copy(busyActions = setOf("entity:lock.front_door")))!!.disabledReason)
+        assertNotNull(entityControl("lock.front_door", state.copy(snapshot = state.snapshot!!.copy(services = buildJsonObject {})))!!.disabledReason)
+    }
+
     @Test fun `native toggles issue explicit on and off services for every supported domain`() {
         for (domain in listOf("light", "switch", "input_boolean")) {
             val id = "$domain.test"

@@ -64,10 +64,11 @@ internal fun EntityValueEditor(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(listOf(draft.ifEmpty { "—" }, unit).filter { it.isNotEmpty() }.joinToString(" "),
                 Modifier.weight(.35f).testTag("entity-value:$id"), maxLines = 2, style = MaterialTheme.typography.bodyMedium)
-            Slider(
+            DeliberateSlider(
                 value = rules.fraction(draft),
                 onValueChange = { draft = rules.atFraction(it); dirty = true },
-                onValueChangeFinished = save,
+                onFinished = save,
+                onCancelled = { draft = current; dirty = false },
                 // Avoid allocating thousands of tick marks for fine-grained ranges.
                 steps = if (rules.intervals <= BigDecimal(100)) (rules.intervals.toInt() - 1).coerceAtLeast(0) else 0,
                 enabled = enabled,

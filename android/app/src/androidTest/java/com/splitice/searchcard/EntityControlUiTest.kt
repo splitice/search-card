@@ -22,17 +22,17 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class EntityControlUiTest {
     @get:Rule val compose = createComposeRule()
-    private val domains = listOf("light", "switch", "input_boolean", "scene", "script", "button", "input_button")
+    private val domains = listOf("light", "switch", "input_boolean", "scene", "script", "button", "input_button", "lock")
     private fun ready() = PanelState(connected = true, snapshot = Snapshot(
         states = buildJsonObject {
             for (domain in domains) put("$domain.test", buildJsonObject {
-                put("state", if (domain in setOf("scene", "button", "input_button")) "unknown" else "off")
+                put("state", if (domain == "lock") "unlocked" else if (domain in setOf("scene", "button", "input_button")) "unknown" else "off")
                 put("attributes", buildJsonObject { put("friendly_name", "Example $domain") })
             })
         }, services = buildJsonObject {
             for (domain in domains) put(domain, buildJsonObject {
                 put("turn_on", buildJsonObject {}); put("turn_off", buildJsonObject {})
-                put("press", buildJsonObject {})
+                put("press", buildJsonObject {}); put("lock", buildJsonObject {}); put("unlock", buildJsonObject {})
             })
         },
     ))
@@ -59,7 +59,7 @@ class EntityControlUiTest {
             assertTrue("Name must be above the value/control row", name.bottom <= minOf(value.top, bounds.top))
             assertTrue("Value and control must share the second row", value.center.y in bounds.top..bounds.bottom)
             control.performTouchInput { click() }
-            val service = if (domain in setOf("button", "input_button")) "press" else "turn_on"
+            val service = if (domain == "lock") "lock" else if (domain in setOf("button", "input_button")) "press" else "turn_on"
             assertEquals("$domain.$service", calls.last().first)
             assertEquals(id, calls.last().second.jsonObject.text("entity_id"))
         }
@@ -68,6 +68,36 @@ class EntityControlUiTest {
         compose.onNodeWithTag("entity-row:script.test").performScrollTo()
         compose.onNodeWithTag("entity-name:script.test", useUnmergedTree = true).performTouchInput { click() }
         assertEquals(listOf("script.test"), details)
+    }
+
+    @Test fun codedLockPromptsMasksAndForgetsCancelledCodes() {
+        val calls = mutableListOf<Pair<String, JsonElement>>()
+        val original = ready()
+        val state = original.copy(snapshot = original.snapshot!!.copy(states = buildJsonObject {
+            put("lock.test", buildJsonObject {
+                put("state", "locked")
+                put("attributes", buildJsonObject { put("friendly_name", "Front door"); put("code_format", "[0-9]{4}") })
+            })
+        }))
+        compose.setContent { MaterialTheme {
+            EntityRow("lock.test", state, { error("Lock controls must not navigate") },
+                { _, service, data -> calls += service to data }, compact = false)
+        } }
+        compose.onNodeWithTag("entity-control:lock.test").performClick()
+        compose.onNodeWithTag("lock-code").performTextInput("1234")
+        compose.onNodeWithTag("lock-code").assert(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Password))
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle { assertTrue(calls.isEmpty()) }
+        compose.onNodeWithTag("entity-control:lock.test").performClick()
+        compose.onNodeWithTag("lock-code").assertTextContains("", substring = false)
+        compose.onNodeWithTag("lock-code").performTextInput("5678")
+        compose.onAllNodesWithText("Unlock").onLast().performClick()
+        compose.runOnIdle {
+            assertEquals(1, calls.size)
+            assertEquals("lock.unlock", calls.single().first)
+            assertEquals("5678", calls.single().second.jsonObject.text("code"))
+            assertEquals("lock.test", calls.single().second.jsonObject.text("entity_id"))
+        }
     }
 
     @Test fun pendingCallsDisableTheControlAndFailuresAppearOnTheSameResult() {

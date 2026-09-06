@@ -6,7 +6,7 @@ import java.math.MathContext
 import java.math.RoundingMode
 import kotlinx.serialization.json.*
 
-internal enum class ControlKind { TOGGLE, ACTION, SELECT, TEXT, NUMBER_BOX, NUMBER_SLIDER }
+internal enum class ControlKind { TOGGLE, ACTION, LOCK, SELECT, TEXT, NUMBER_BOX, NUMBER_SLIDER }
 
 internal data class NumberRules(val min: BigDecimal, val max: BigDecimal, val step: BigDecimal) {
     val intervals: BigDecimal get() = (max - min).divideToIntegralValue(step)
@@ -52,6 +52,7 @@ internal data class EntityControl(
     val options: List<String> = emptyList(),
     val number: NumberRules? = null,
     val text: TextRules? = null,
+    val lockCodePattern: String? = null,
 ) {
     val toggle: Boolean get() = kind == ControlKind.TOGGLE
     val checked: Boolean get() = value == "on"
@@ -93,6 +94,7 @@ internal fun entityControl(id: String, state: PanelState): EntityControl? {
     val kind = when (domain) {
         "light", "switch", "input_boolean" -> ControlKind.TOGGLE
         "scene", "script", "button", "input_button" -> ControlKind.ACTION
+        "lock" -> ControlKind.LOCK
         "select", "input_select" -> ControlKind.SELECT
         "text", "input_text" -> ControlKind.TEXT
         "number", "input_number" -> {
@@ -110,6 +112,7 @@ internal fun entityControl(id: String, state: PanelState): EntityControl? {
     ) else null
     val options = attributes.array("options").mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }.distinct()
     val action = when (domain) {
+        "lock" -> if (value == "locked") "unlock" else "lock"
         "button", "input_button" -> "press"
         "select", "input_select" -> "select_option"
         "text", "input_text", "number", "input_number" -> "set_value"
@@ -120,6 +123,9 @@ internal fun entityControl(id: String, state: PanelState): EntityControl? {
         !state.connected -> "Waiting for fresh connection"
         value == "unavailable" -> "Unavailable"
         (kind == ControlKind.TOGGLE || domain == "script") && value !in setOf("on", "off") -> "State unknown"
+        domain == "lock" && value in setOf("locking", "unlocking", "opening") -> "Moving…"
+        domain == "lock" && value == "jammed" -> "Jammed"
+        domain == "lock" && value !in setOf("locked", "unlocked", "open") -> "State unknown"
         numeric && number == null -> "Invalid number range"
         text != null && (text.min < 0 || text.max < text.min) -> "Invalid text limits"
         kind == ControlKind.SELECT && options.isEmpty() -> "No options available"
@@ -128,7 +134,8 @@ internal fun entityControl(id: String, state: PanelState): EntityControl? {
     }
     return EntityControl(
         "$domain.$action", buildJsonObject { put("entity_id", id) }, kind, value,
-        when (domain) { "scene" -> "Activate"; "script" -> "Run"; "button", "input_button" -> "Press"; else -> "Save" },
+        when (domain) { "lock" -> if (action == "unlock") "Unlock" else "Lock"; "scene" -> "Activate"; "script" -> "Run"; "button", "input_button" -> "Press"; else -> "Save" },
         reason, options, number, text,
+        if (domain == "lock") (attributes["code_format"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } else null,
     )
 }
