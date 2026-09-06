@@ -87,6 +87,8 @@ Search also includes registered sidebar pages such as Energy, Settings, and dash
 
 All matches remain searchable and scrollable, including with an old `max_results: 10` configuration. `max_results` sizes the web dropdown on desktop and mobile; it never truncates matches in either engine. The native panel uses the available window and keyboard space for its height. Android exposes the first 100 results, adds batches of 100 when you approach the end, and composes only visible rows using a lazy list. Paging uses the local snapshot and makes no extra network requests. A new query resets the list to the first page; state restoration retains the loaded page and scroll position. The count shows all matches, including those not yet loaded into the list.
 
+Long-press any entity’s name row to open **Ignore** and **Priority** (or **Unpriority**). These update the Home Assistant `search_hidden` and `search_priority` labels, preserving other labels and creating the search label when needed. Confirmed changes immediately hide or reorder results and persist across reconnects. Label edits require a connection and Home Assistant registry-edit permission; failures appear below the entity. Remove `search_hidden` in Home Assistant to restore an ignored entity.
+
 Native entity controls stay in the panel. Only the first (name) row opens entity details in Companion. Lights, switches, and input booleans send explicit `turn_on`/`turn_off` calls; scenes and scripts send their domain's `turn_on`. Scenes with no previous activation (`unknown` state) can still be activated, consistent with [Home Assistant scene state semantics](https://www.home-assistant.io/integrations/scene/). Locks show a native Lock/Unlock button beside their state. Moving, jammed, unknown, unavailable, offline, and pending locks cannot be operated. Locks declaring `code_format` prompt for a masked code, which Home Assistant validates; codes are discarded when the prompt closes and never saved. Unsupported domains show their value and link to details.
 
 The same native second row supports these additional domains:
@@ -175,3 +177,9 @@ Before installing a release for daily use, perform this manual matrix on Android
 | Close panel/open browser/turn screen off | Socket closes; app emits no continuing network traffic |
 
 For battery inspection, record a foreground connection and then dismiss the panel. Use Android Studio Network Profiler (debug build) or server WebSocket logs to verify closure and no subsequent requests; `adb shell dumpsys jobscheduler` and `adb shell dumpsys alarm` should show no jobs/alarms owned by `com.splitice.searchcard`. Use `adb shell dumpsys batterystats com.splitice.searchcard` for a longer idle observation. Running the panel again should create a new connection, not reuse a background one.
+
+### Entity search menu
+
+Long-press an entity name to open **Ignore** and **Priority** (or **Unpriority** when already prioritized). These update Home Assistant’s `search_hidden` and `search_priority` entity labels, preserving unrelated labels. The app creates the named label if needed. Confirmed changes immediately update Android results and apply to web searches when their metadata refreshes. To restore an ignored entity, remove its `search_hidden` label in Home Assistant.
+
+Changes require a connection and Home Assistant registry write permissions. Entities without registry entries cannot be labeled; failures appear on the row. Offline or pending changes disable the menu options. Failed requests are not automatically replayed.

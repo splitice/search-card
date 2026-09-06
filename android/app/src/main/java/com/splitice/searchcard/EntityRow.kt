@@ -1,6 +1,6 @@
 package com.splitice.searchcard
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
@@ -22,6 +22,7 @@ import kotlinx.serialization.json.*
 internal fun EntityRow(
     id: String, state: PanelState, openEntity: (String) -> Unit,
     callService: (String, String, JsonElement) -> Unit, compact: Boolean,
+    updateSearchLabel: (String, SearchLabelAction) -> Unit = { _, _ -> },
 ) {
     val entity = state.snapshot?.states?.get(id) as? JsonObject ?: return
     val attributes = entity.obj("attributes")
@@ -29,17 +30,37 @@ internal fun EntityRow(
     val key = "entity:$id"
     val control = entityControl(id, state)
     val error = state.actionErrors[key]
+    var menuOpen by remember(id) { mutableStateOf(false) }
+    val labelKey = "search-label:$id"
+    val labelEnabled = state.connected && labelKey !in state.busyActions
     var requestingCode by remember(id, control?.service, control?.disabledReason) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().testTag("entity-row:$id")) {
         // Only the details area navigates. Tapping disabled controls or the space
         // around them must never launch Companion and dismiss the native panel.
-        Row(Modifier.fillMaxWidth().clickable(onClickLabel = "Open $name details") { openEntity(id) }
-            .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (!compact) Icon(iconFor(attributes.text("icon"), id.substringBefore('.')), null)
-            Text(name, Modifier.weight(1f).testTag("entity-name:$id"), style = MaterialTheme.typography.bodyLarge)
-            Icon(Icons.Default.ChevronRight, "Entity details")
+        Box {
+            Row(Modifier.fillMaxWidth().combinedClickable(
+                onClickLabel = "Open $name details", onClick = { openEntity(id) },
+                onLongClickLabel = "Search options for $name", onLongClick = { menuOpen = true },
+            )
+                .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!compact) Icon(iconFor(attributes.text("icon"), id.substringBefore('.')), null)
+                Text(name, Modifier.weight(1f).testTag("entity-name:$id"), style = MaterialTheme.typography.bodyLarge)
+                Icon(Icons.Default.ChevronRight, "Entity details")
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(text = { Text("Ignore") }, enabled = labelEnabled, onClick = {
+                    menuOpen = false
+                    updateSearchLabel(id, SearchLabelAction.IGNORE)
+                })
+                val priority = id in state.snapshot?.priority.orEmpty()
+                DropdownMenuItem(text = { Text(if (priority) "Unpriority" else "Priority") }, enabled = labelEnabled, onClick = {
+                    menuOpen = false
+                    updateSearchLabel(id, if (priority) SearchLabelAction.UNPRIORITY else SearchLabelAction.PRIORITY)
+                })
+            }
         }
+        state.actionErrors[labelKey]?.let { ActionFailure(it) }
         if (control != null && control.kind !in setOf(ControlKind.TOGGLE, ControlKind.ACTION, ControlKind.LOCK)) {
             Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
                 EntityValueEditor(id, name, attributes.text("unit_of_measurement"), control) { data ->

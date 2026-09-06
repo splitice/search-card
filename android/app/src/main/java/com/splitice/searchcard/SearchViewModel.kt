@@ -40,6 +40,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private var accountEpoch = 0
     val state = MutableStateFlow(initialPanelState(storage.settings.dashboard.isNotBlank(), storage.hasSavedSession))
     private val serviceCalls = ServiceCalls(state)
+    private val searchLabelActions = SearchLabelActions(state)
     val query = MutableStateFlow("")
     private val engine = SearchEngine()
     @OptIn(FlowPreview::class)
@@ -231,6 +232,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val owner = foreground ?: return
         serviceCalls.submit(CoroutineScope(viewModelScope.coroutineContext + owner), key, service, data) { fields ->
             session.request("call_service", fields)
+        }
+    }
+    internal fun updateSearchLabel(id: String, action: SearchLabelAction) {
+        val session = socket ?: return
+        val owner = foreground ?: return
+        searchLabelActions.submit(CoroutineScope(viewModelScope.coroutineContext + owner), id, action) { type, fields ->
+            session.request(type, fields)
         }
     }
     override fun onCleared() { stop() }

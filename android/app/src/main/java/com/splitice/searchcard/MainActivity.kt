@@ -284,7 +284,7 @@ private fun PanelResults(
                     leadingContent = if (compact) null else ({ Icon(iconFor(result.panel.icon, "navigation"), null) }),
                     modifier = Modifier.clickable { openNavigation(result.panel.path) },
                 )
-                is SearchResult.Entity -> EntityRow(result.id, state, openEntity, model::callService, compact)
+                is SearchResult.Entity -> EntityRow(result.id, state, openEntity, model::callService, compact, model::updateSearchLabel)
             }
         }
     }
