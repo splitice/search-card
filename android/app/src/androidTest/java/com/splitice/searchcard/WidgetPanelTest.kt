@@ -67,7 +67,10 @@ class WidgetPanelTest {
             compose.onNode(hasSetTextAction()).assertTextContains("kitchen")
             assertFieldBounds(context, bounds)
             scenario.onActivity {
-                it.startActivity(Intent(it, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                // Keep the intent identity so ActivityScenario can observe destruction after onNewIntent.
+                // A widget launch without source bounds must still use the normal panel.
+                it.startActivity(Intent(it, MainActivity::class.java)
+                    .setAction(SearchWidget.ACTION_OPEN_WIDGET).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP))
             }
             compose.waitUntil(30_000) { compose.onAllNodesWithTag("widget-search-field").fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithContentDescription("Close search").assertIsDisplayed()
