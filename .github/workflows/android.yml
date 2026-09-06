@@ -141,6 +141,7 @@ jobs:
       - uses: reactivecircus/android-emulator-runner@v2
         env:
           HA_RUNTIME_ACCOUNT: ${{ inputs.live-account && secrets.ANDROID_RUNTIME_TEST_ACCOUNT || '' }}
+          ANDROID_EMULATOR_FEATURES: -GLDirectMem,-HasSharedSlotsHostMemoryAllocator
         with:
           api-level: '37.0'
           target: google_apis
@@ -152,7 +153,7 @@ jobs:
           disk-size: 8G
           disable-linux-hw-accel: false
           # API 37's mapper.ranchu aborts if the host advertises read-color-buffer DMA.
-          emulator-options: -no-window -gpu swiftshader -feature -HasSharedSlotsHostMemoryAllocator -no-snapshot -noaudio -no-boot-anim -accel on -no-metrics -show-kernel
+          emulator-options: -no-window -gpu swiftshader -feature -GLDirectMem,-HasSharedSlotsHostMemoryAllocator -no-snapshot -noaudio -no-boot-anim -accel on -no-metrics -show-kernel
           disable-animations: true
           pre-emulator-launch-script: mkdir -p android/device-diagnostics; nohup timeout 1200 adb logcat -b all -v threadtime > android/device-diagnostics/logcat.txt 2>&1 &
           script: |
