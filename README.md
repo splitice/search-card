@@ -4,6 +4,10 @@ A Lovelace card for Home Assistant that enables quick entity searching, local se
 
 ![Demo of card](images/demo.gif)
 
+## Android home-screen widget
+
+A native Kotlin Android app and search-bar widget live in [`android/`](android/README.md). It syncs this card's dashboard configuration, supports cached offline search, and connects only while the search panel is open. See the [Android build and installation instructions](android/README.md).
+
 ## Features
 
 - 🔍 Quick entity search within the Home Assistant frontend

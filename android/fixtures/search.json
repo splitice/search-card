@@ -1,0 +1,397 @@
+{
+  "base": {
+    "config": {
+      "local_services": {
+        "services": [
+          {
+            "name": "Plex",
+            "url": "http://plex.local:32400/web",
+            "category": "media",
+            "aliases": [
+              "movies",
+              "tv"
+            ],
+            "icon": "mdi:plex"
+          },
+          {
+            "name": "Sonarr",
+            "url": "http://sonarr.local:8989",
+            "category": "media",
+            "aliases": [
+              "tv",
+              "series"
+            ]
+          },
+          {
+            "name": "Invalid service"
+          }
+        ]
+      }
+    },
+    "states": {
+      "light.living_room": {
+        "state": "on",
+        "attributes": {
+          "friendly_name": "Living Room"
+        }
+      },
+      "switch.coffee": {
+        "state": "off",
+        "attributes": {
+          "friendly_name": "Coffee"
+        }
+      },
+      "sensor.battery": {
+        "state": "75",
+        "attributes": {
+          "friendly_name": "Battery"
+        }
+      },
+      "light.attic": {
+        "state": "unavailable",
+        "attributes": {
+          "friendly_name": "Attic"
+        }
+      },
+      "sensor.unnamed": {
+        "state": "unknown",
+        "attributes": {}
+      }
+    },
+    "services": {
+      "homeassistant": {
+        "toggle": {}
+      },
+      "light": {
+        "turn_on": {},
+        "turn_off": {}
+      },
+      "transmission": {
+        "add_torrent": {}
+      }
+    },
+    "priority": [
+      "switch.coffee"
+    ],
+    "hidden": [
+      "sensor.battery"
+    ],
+    "query": "."
+  },
+  "cases": [
+    {
+      "name": "empty",
+      "query": ""
+    },
+    {
+      "name": "default ordering"
+    },
+    {
+      "name": "friendly name case insensitive",
+      "query": "LIVING"
+    },
+    {
+      "name": "entity id",
+      "query": "^light\\."
+    },
+    {
+      "name": "local aliases",
+      "query": "movies"
+    },
+    {
+      "name": "local category",
+      "query": "media"
+    },
+    {
+      "name": "local url not searched",
+      "query": "8989"
+    },
+    {
+      "name": "local links unaffected by entity filters",
+      "query": "tv",
+      "config": {
+        "included_regex": []
+      }
+    },
+    {
+      "name": "priority before services",
+      "query": ".",
+      "priority": [
+        "light.attic",
+        "switch.coffee"
+      ]
+    },
+    {
+      "name": "hidden wins over priority",
+      "priority": [
+        "sensor.battery"
+      ]
+    },
+    {
+      "name": "scalar include",
+      "config": {
+        "included_regex": "^light\\."
+      }
+    },
+    {
+      "name": "exclude after include",
+      "config": {
+        "included_regex": [
+          "^light\\."
+        ],
+        "excluded_regex": [
+          "attic"
+        ]
+      }
+    },
+    {
+      "name": "empty include list",
+      "config": {
+        "included_regex": []
+      }
+    },
+    {
+      "name": "friendly name exclusion",
+      "config": {
+        "excluded_regex": "living room"
+      }
+    },
+    {
+      "name": "limit",
+      "config": {
+        "max_results": 2
+      }
+    },
+    {
+      "name": "zero limit defaults",
+      "config": {
+        "max_results": 0
+      }
+    },
+    {
+      "name": "negative slice",
+      "config": {
+        "max_results": -1
+      }
+    },
+    {
+      "name": "invalid query",
+      "query": "["
+    },
+    {
+      "name": "invalid filter",
+      "config": {
+        "excluded_regex": [
+          "["
+        ]
+      }
+    },
+    {
+      "name": "custom action recursive values",
+      "query": "toggle light.living_room",
+      "config": {
+        "actions": [
+          {
+            "matches": "^toggle (.+\\..+)",
+            "name": "Toggle {1}",
+            "service": "homeassistant.toggle",
+            "service_data": {
+              "entity_id": "{1}",
+              "nested": {
+                "list": [
+                  "{0}",
+                  "{1}",
+                  12,
+                  true,
+                  null
+                ]
+              },
+              "repeat": "{1} {1}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "action matching case sensitive",
+      "query": "Toggle light.living_room",
+      "config": {
+        "actions": [
+          {
+            "matches": "^toggle (.+\\..+)",
+            "name": "Toggle {1}",
+            "service": "homeassistant.toggle",
+            "service_data": {
+              "entity_id": "{1}",
+              "nested": {
+                "list": [
+                  "{0}",
+                  "{1}",
+                  12,
+                  true,
+                  null
+                ]
+              },
+              "repeat": "{1} {1}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing action service",
+      "query": "toggle light.living_room",
+      "config": {
+        "actions": [
+          {
+            "matches": "^toggle (.+\\..+)",
+            "name": "Toggle {1}",
+            "service": "homeassistant.toggle",
+            "service_data": {
+              "entity_id": "{1}",
+              "nested": {
+                "list": [
+                  "{0}",
+                  "{1}",
+                  12,
+                  true,
+                  null
+                ]
+              },
+              "repeat": "{1} {1}"
+            }
+          }
+        ]
+      },
+      "services": {}
+    },
+    {
+      "name": "built in magnet",
+      "query": "magnet:?xt=urn:btih:abc"
+    },
+    {
+      "name": "built in torrent",
+      "query": "https://example.org/movie.torrent"
+    },
+    {
+      "name": "built in no service",
+      "query": "magnet:test",
+      "services": {}
+    },
+    {
+      "name": "optional unmatched capture",
+      "query": "go",
+      "config": {
+        "actions": [
+          {
+            "matches": "^(go)( optional)?$",
+            "name": "{0}:{1}:{2}",
+            "service": "homeassistant.toggle",
+            "service_data": {
+              "value": "{2}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "replacement special dollars",
+      "query": "send $$ $& $` $'",
+      "config": {
+        "actions": [
+          {
+            "matches": "^send (.*)$",
+            "name": "a{1}z",
+            "service": "homeassistant.toggle",
+            "service_data": {
+              "value": "before{1}after"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "actions not truncated",
+      "query": "toggle light.living_room",
+      "config": {
+        "max_results": 1,
+        "actions": [
+          {
+            "matches": "^toggle (.+\\..+)",
+            "name": "Toggle {1}",
+            "service": "homeassistant.toggle",
+            "service_data": {
+              "entity_id": "{1}",
+              "nested": {
+                "list": [
+                  "{0}",
+                  "{1}",
+                  12,
+                  true,
+                  null
+                ]
+              },
+              "repeat": "{1} {1}"
+            }
+          },
+          {
+            "matches": "^toggle (.+\\..+)",
+            "name": "Toggle {1}",
+            "service": "homeassistant.toggle",
+            "service_data": {
+              "entity_id": "{1}",
+              "nested": {
+                "list": [
+                  "{0}",
+                  "{1}",
+                  12,
+                  true,
+                  null
+                ]
+              },
+              "repeat": "{1} {1}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "malformed available action regex",
+      "query": "x",
+      "config": {
+        "actions": [
+          {
+            "matches": "[",
+            "name": "broken",
+            "service": "homeassistant.toggle"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ascii punctuation ordering",
+      "states": {
+        "sensor.a2": {
+          "state": "off",
+          "attributes": {}
+        },
+        "sensor.a_2": {
+          "state": "off",
+          "attributes": {}
+        },
+        "sensor.a10": {
+          "state": "off",
+          "attributes": {}
+        },
+        "sensor.a_1": {
+          "state": "off",
+          "attributes": {}
+        },
+        "sensor.a": {
+          "state": "off",
+          "attributes": {}
+        }
+      }
+    }
+  ]
+}

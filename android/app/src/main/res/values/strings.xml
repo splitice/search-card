@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Search Card</string>
+    <string name="widget_hint">Search Home Assistant</string>
+    <string name="widget_description">Tap to search Home Assistant entities and local services</string>
+</resources>

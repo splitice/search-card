@@ -1,0 +1,13 @@
+plugins {
+    id("com.android.application") version "8.13.2" apply false
+    kotlin("android") version "2.2.21" apply false
+    kotlin("jvm") version "2.2.21" apply false
+    kotlin("plugin.compose") version "2.2.21" apply false
+    kotlin("plugin.serialization") version "2.2.21" apply false
+}
+
+tasks.register("verifySearchCardParity") {
+    group = "verification"
+    description = "Compare the Kotlin engine with the reviewed repository search-card.js."
+    dependsOn(":core:test")
+}

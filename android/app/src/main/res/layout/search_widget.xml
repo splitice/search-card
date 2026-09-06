@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/search_widget" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="horizontal" android:gravity="center_vertical"
+    android:paddingHorizontal="16dp" android:paddingVertical="8dp"
+    android:background="@drawable/widget_background" android:contentDescription="@string/widget_description">
+    <ImageView android:layout_width="28dp" android:layout_height="28dp"
+        android:src="@drawable/ic_search" android:importantForAccessibility="no" />
+    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:layout_marginStart="12dp" android:text="@string/widget_hint"
+        android:textColor="@color/widget_text" android:textSize="16sp" android:maxLines="1" android:ellipsize="end" />
+</LinearLayout>
