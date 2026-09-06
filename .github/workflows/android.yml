@@ -5,6 +5,11 @@ on:
   pull_request:
     paths: ['android/**', 'search-card.js', '.github/workflows/android.yml']
   workflow_dispatch:
+    inputs:
+      live-account:
+        description: Run the read-only login smoke test using ANDROID_RUNTIME_TEST_ACCOUNT
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -130,6 +135,8 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
+        env:
+          HA_RUNTIME_ACCOUNT: ${{ inputs.live-account && secrets.ANDROID_RUNTIME_TEST_ACCOUNT || '' }}
         with:
           api-level: '37.0'
           target: google_apis
@@ -145,7 +152,7 @@ jobs:
           script: |
             adb shell getprop ro.build.version.sdk | grep -qx 37
             adb shell getprop ro.build.fingerprint > android/device-diagnostics/fingerprint.txt
-            cd android && ./gradlew connectedDebugAndroidTest --console=plain
+            bash android/tools/run-device-tests.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
