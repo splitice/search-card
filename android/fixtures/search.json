@@ -1429,6 +1429,140 @@
       "name": "Unicode blank query",
       "query": "\ufeff\u00a0\u2028",
       "expected_entities": []
+    },
+    {
+      "query": "Ordering test",
+      "states": {
+        "automation.a": {
+          "state": "on",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        },
+        "automation.z": {
+          "state": "off",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        },
+        "sensor.test": {
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        },
+        "switch.test": {
+          "state": "off",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        }
+      },
+      "hidden": [],
+      "priority": [],
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "automations sort last regardless of on off state",
+      "expected_entities": [
+        "sensor.test",
+        "switch.test",
+        "automation.a",
+        "automation.z"
+      ]
+    },
+    {
+      "query": "Ordering test",
+      "states": {
+        "automation.a": {
+          "state": "on",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        },
+        "automation.z": {
+          "state": "off",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        },
+        "sensor.test": {
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        },
+        "switch.test": {
+          "state": "off",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        }
+      },
+      "hidden": [],
+      "priority": [
+        "automation.z"
+      ],
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "explicit automation priority overrides default last rank",
+      "expected_entities": [
+        "automation.z",
+        "sensor.test",
+        "switch.test",
+        "automation.a"
+      ]
+    },
+    {
+      "query": "Ordering test",
+      "states": {
+        "automation.a": {
+          "state": "on",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        },
+        "automation.z": {
+          "state": "off",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        },
+        "sensor.test": {
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        },
+        "switch.test": {
+          "state": "off",
+          "attributes": {
+            "friendly_name": "Ordering test"
+          }
+        }
+      },
+      "hidden": [
+        "automation.z"
+      ],
+      "priority": [
+        "automation.z"
+      ],
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "ignored automation stays hidden even with priority",
+      "expected_entities": [
+        "sensor.test",
+        "switch.test",
+        "automation.a"
+      ]
     }
   ]
 }

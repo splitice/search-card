@@ -46,7 +46,11 @@ class SearchEngine {
                 .map { SearchResult.Navigation(it) }
             val results = (local + navigation + entities).sortedBy {
                 when (it) {
-                    is SearchResult.Entity -> if (it.id in snapshot.priority) 0 else 3
+                    is SearchResult.Entity -> when {
+                        it.id in snapshot.priority -> 0
+                        it.id.startsWith("automation.") -> 4
+                        else -> 3
+                    }
                     is SearchResult.LocalService -> 1
                     is SearchResult.Navigation -> 2
                 }

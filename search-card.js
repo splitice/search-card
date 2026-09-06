@@ -614,6 +614,10 @@ customElements.whenDefined("card-tools").then(() => {
         return 1;
       }
 
+      if (result.type === "entity" && result.entity_id.startsWith("automation.")) {
+        return 4;
+      }
+
       return result.type === "navigation" ? 2 : 3;
     }
 
