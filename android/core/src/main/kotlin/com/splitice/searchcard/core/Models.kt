@@ -17,11 +17,13 @@ data class Snapshot(
     val priority: Set<String> = emptySet(),
     val hidden: Set<String> = emptySet(),
     val savedAt: Long = 0,
+    val panels: JsonObject = JsonObject(emptyMap()),
 )
 
 sealed interface SearchResult {
     data class Entity(val id: String) : SearchResult
     data class LocalService(val service: JsonObject) : SearchResult
+    data class Navigation(val panel: NavigationPage) : SearchResult
 }
 data class SearchAction(val name: String, val service: String, val data: JsonElement, val icon: String)
 data class SearchOutput(
@@ -35,6 +37,11 @@ data class SearchOutput(
             when (it) {
                 is SearchResult.Entity -> buildJsonObject { put("type", "entity"); put("entity_id", it.id) }
                 is SearchResult.LocalService -> buildJsonObject { put("type", "local_service"); put("service", it.service) }
+                is SearchResult.Navigation -> buildJsonObject {
+                    put("type", "navigation"); put("panel", buildJsonObject {
+                        put("name", it.panel.name); put("path", it.panel.path); put("icon", it.panel.icon)
+                    })
+                }
             }
         }))
         put("total", total)

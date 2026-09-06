@@ -13,11 +13,11 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -92,7 +92,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme(primary = Color(0xFF80D2FF))
                 else lightColorScheme(primary = Color(0xFF00658D))) {
-                SearchPanel(model, panelVisible, foregroundSession, widgetAnchor, ::currentWindow, launchSequence, ::finish, ::openLink, ::openEntity, ::pinWidget,
+                SearchPanel(model, panelVisible, foregroundSession, widgetAnchor, ::currentWindow, launchSequence, ::finish, ::openLink, ::openEntity, ::openNavigation, ::pinWidget,
                     canRequestFocus = { !isFinishing && !isDestroyed })
             }
         }
@@ -116,6 +116,14 @@ class MainActivity : ComponentActivity() {
     private fun openEntity(id: String) {
         val dashboard = Uri.parse(model.storage.settings.dashboard).buildUpon()
             .appendQueryParameter("more-info-entity-id", id).build()
+        openHomeAssistant(dashboard)
+    }
+    private fun openNavigation(path: String) {
+        if (!isNavigationPath(path)) return
+        openHomeAssistant(Uri.parse(model.storage.settings.dashboard).buildUpon()
+            .encodedPath(path).clearQuery().fragment(null).build())
+    }
+    private fun openHomeAssistant(dashboard: Uri) {
         val companion = dashboard.buildUpon().scheme("homeassistant").authority("navigate").build()
         try {
             // Launch directly: package visibility filtering can hide installed handlers from queries.
@@ -135,7 +143,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSession: Int, widgetAnchor: WidgetAnchor?, currentWindow: () -> PanelBounds, launchSequence: Int, dismiss: () -> Unit, open: (String) -> Unit, openEntity: (String) -> Unit, pin: () -> Unit, canRequestFocus: () -> Boolean) {
+private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSession: Int, widgetAnchor: WidgetAnchor?, currentWindow: () -> PanelBounds, launchSequence: Int, dismiss: () -> Unit, open: (String) -> Unit, openEntity: (String) -> Unit, openNavigation: (String) -> Unit, pin: () -> Unit, canRequestFocus: () -> Boolean) {
     val state by model.state.collectAsStateWithLifecycle()
     val query by model.query.collectAsStateWithLifecycle()
     val output by model.output.collectAsStateWithLifecycle()
@@ -160,13 +168,9 @@ private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSess
             }
         }
     }
-    val cached = state.snapshot
-    val status = if (!state.connected && cached != null) {
-        val minutes = ((System.currentTimeMillis() - cached.savedAt).coerceAtLeast(0) / 60_000)
-        "${state.status} · saved ${if (minutes == 0L) "just now" else "$minutes min ago"}"
-    } else state.status
+    val status = state.status
     val widgetStatus = if (output.results.isNotEmpty() && state.choices.isEmpty())
-        "$status\nShowing ${output.results.size} of ${output.total} results" else status
+        "$status\n${output.total} results" else status
     val fieldModifier = Modifier.focusRequester(focus).onGloballyPositioned { fieldCoordinates = it }
     val signIn = { keyboard?.hide(); login = true }
     WidgetPanelHost(widgetAnchor, currentWindow, launchSequence, visible, widgetStatus, dismiss,
@@ -176,12 +180,12 @@ private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSess
         },
         body = { modifier, scrollStatus ->
             if (scrollStatus) {
-                PanelResults(state, output, query, model, open, openEntity, signIn, modifier, showCount = false) {
+                PanelResults(state, output, query, model, open, openEntity, openNavigation, signIn, modifier, showCount = false) {
                     WidgetStatus(widgetStatus, model::refresh, { settings = true }, dismiss)
                 }
             } else Column(modifier) {
                 WidgetStatus(widgetStatus, model::refresh, { settings = true }, dismiss)
-                PanelResults(state, output, query, model, open, openEntity, signIn, Modifier.weight(1f), showCount = false)
+                PanelResults(state, output, query, model, open, openEntity, openNavigation, signIn, Modifier.weight(1f), showCount = false)
             }
         },
         fallback = {
@@ -200,7 +204,7 @@ private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSess
                         trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { model.query.value = "" }) { Icon(Icons.Default.Clear, "Clear search") } },
                         singleLine = true, shape = RoundedCornerShape(20.dp))
                     Text(status, Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
-                    PanelResults(state, output, query, model, open, openEntity, signIn, Modifier.weight(1f))
+                    PanelResults(state, output, query, model, open, openEntity, openNavigation, signIn, Modifier.weight(1f))
                 }
             }
         })
@@ -217,7 +221,7 @@ private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSess
 @Composable
 private fun PanelResults(
     state: PanelState, output: SearchOutput, query: String, model: SearchViewModel,
-    open: (String) -> Unit, openEntity: (String) -> Unit, signIn: () -> Unit, modifier: Modifier,
+    open: (String) -> Unit, openEntity: (String) -> Unit, openNavigation: (String) -> Unit, signIn: () -> Unit, modifier: Modifier,
     showCount: Boolean = true,
     header: (@Composable () -> Unit)? = null,
 ) {
@@ -225,51 +229,63 @@ private fun PanelResults(
     // Status, errors, sign-in, and choices must remain reachable even in a very short window.
     BoxWithConstraints(modifier) {
         val compact = maxWidth < 240.dp
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) {
-            if (header != null) item(key = "status") { header() }
-            if (state.needsLogin) item(key = "login") {
-                Button(onClick = signIn, Modifier.fillMaxWidth()) { Text("Sign in to Home Assistant") }
-            }
-            if (error != null) item(key = "error") {
-                Text(error, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-            if (state.choices.isNotEmpty()) {
-                item { Text("Choose the card to sync", style = MaterialTheme.typography.titleSmall) }
-                items(state.choices) { card -> TextButton(onClick = { model.choose(card) }) { Text(card.title) } }
-            } else {
-                if (output.results.isNotEmpty() && showCount) item {
-                    Text("Showing ${output.results.size} of ${output.total} results", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
+        PagedResults(
+            query, output.results, Modifier.fillMaxSize(),
+            showResults = state.choices.isEmpty(),
+            beforeResults = {
+                if (header != null) item(key = "status") { header() }
+                if (state.needsLogin) item(key = "login") {
+                    Button(onClick = signIn, Modifier.fillMaxWidth()) { Text("Sign in to Home Assistant") }
                 }
-                items(output.actions.withIndex().toList(), key = { "action:${it.index}" }) { indexed ->
-                    val action = indexed.value
-                    val key = "action:${action.service}:${action.data}"
-                    ListItem(
-                        headlineContent = { Text(action.name) },
-                        supportingContent = { Text(if (key in state.busyActions) "Sending…" else "Run action") },
-                        leadingContent = if (compact) null else ({ Icon(iconFor(action.icon, action.service.substringBefore('.')), null) }),
-                        modifier = Modifier.clickable(enabled = state.connected && key !in state.busyActions) {
-                            model.callService(key, action.service, action.data)
-                        },
-                    )
+                if (error != null) item(key = "error") {
+                    Text(error, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
-                items(output.results.withIndex().toList(), key = { "result:${it.index}" }) { indexed ->
-                    when (val result = indexed.value) {
-                        is SearchResult.LocalService -> ListItem(
-                            headlineContent = { Text(result.service.text("name")) },
-                            supportingContent = { Text(result.service.text("category").ifEmpty { result.service.text("url") }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            leadingContent = if (compact) null else ({ Icon(iconFor(result.service.text("icon"), "local"), null) }),
-                            trailingContent = if (compact) null else ({ Icon(Icons.AutoMirrored.Filled.OpenInNew, "Open service") }),
-                            modifier = Modifier.clickable { open(result.service.text("url")) },
+                if (state.choices.isNotEmpty()) {
+                    item { Text("Choose the card to sync", style = MaterialTheme.typography.titleSmall) }
+                    items(state.choices) { card -> TextButton(onClick = { model.choose(card) }) { Text(card.title) } }
+                } else {
+                    if (output.results.isNotEmpty() && showCount) item {
+                        Text("${output.total} results", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
+                    }
+                    items(output.actions.size, key = { "action:$it" }, contentType = { "action" }) { index ->
+                        val action = output.actions[index]
+                        val key = "action:${action.service}:${action.data}"
+                        ListItem(
+                            headlineContent = { Text(action.name) },
+                            supportingContent = { Text(if (key in state.busyActions) "Sending…" else "Run action") },
+                            leadingContent = if (compact) null else ({ Icon(iconFor(action.icon, action.service.substringBefore('.')), null) }),
+                            modifier = Modifier.clickable(enabled = state.connected && key !in state.busyActions) {
+                                model.callService(key, action.service, action.data)
+                            },
                         )
-                        is SearchResult.Entity -> EntityRow(result.id, state, model, openEntity, compact)
                     }
                 }
-                if (query.isNotEmpty() && output.results.isEmpty() && output.actions.isEmpty() && error == null) {
-                    item { Text("No matching entities or services", Modifier.padding(16.dp)) }
+            }, afterResults = {
+                if (state.choices.isEmpty()) {
+                    if (query.isNotEmpty() && output.results.isEmpty() && output.actions.isEmpty() && error == null) {
+                        item { Text("No matching entities or services", Modifier.padding(16.dp)) }
+                    }
+                    if (query.isEmpty()) item {
+                        Text("Search entities, pages, local services, or a configured action.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
-                if (query.isEmpty()) item {
-                    Text("Search entities, local services, or a configured action.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+            },
+        ) { result ->
+            when (result) {
+                is SearchResult.LocalService -> ListItem(
+                    headlineContent = { Text(result.service.text("name")) },
+                    supportingContent = { Text(result.service.text("category").ifEmpty { result.service.text("url") }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingContent = if (compact) null else ({ Icon(iconFor(result.service.text("icon"), "local"), null) }),
+                    trailingContent = if (compact) null else ({ Icon(Icons.AutoMirrored.Filled.OpenInNew, "Open service") }),
+                    modifier = Modifier.clickable { open(result.service.text("url")) },
+                )
+                is SearchResult.Navigation -> ListItem(
+                    headlineContent = { Text(result.panel.name) },
+                    supportingContent = { Text("Home Assistant", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingContent = if (compact) null else ({ Icon(iconFor(result.panel.icon, "navigation"), null) }),
+                    modifier = Modifier.clickable { openNavigation(result.panel.path) },
+                )
+                is SearchResult.Entity -> EntityRow(result.id, state, model, openEntity, compact)
             }
         }
     }
@@ -315,6 +331,15 @@ private fun iconFor(mdi: String, domain: String): ImageVector = when (mdi.remove
     "progress-download", "download" -> Icons.Default.Download
     "lamp", "lightbulb" -> Icons.Default.Lightbulb
     "power", "toggle-switch" -> Icons.Default.PowerSettingsNew
+    "lightning-bolt" -> Icons.Default.Bolt
+    "chart-box" -> Icons.Default.BarChart
+    "format-list-bulleted", "clipboard-list" -> Icons.AutoMirrored.Filled.List
+    "map" -> Icons.Default.Map
+    "calendar" -> Icons.Default.CalendarMonth
+    "cog" -> Icons.Default.Settings
+    "hammer" -> Icons.Default.Build
+    "view-dashboard" -> Icons.Default.Dashboard
+    "play-box-multiple" -> Icons.Default.PlayArrow
     else -> when (domain) {
         "light" -> Icons.Default.Lightbulb
         "switch", "input_boolean" -> Icons.Default.PowerSettingsNew

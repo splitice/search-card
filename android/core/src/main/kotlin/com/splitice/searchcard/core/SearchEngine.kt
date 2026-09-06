@@ -37,10 +37,13 @@ class SearchEngine {
                         matches(listOf(service.text("name"), service.text("category")) +
                             patterns(service["aliases"], emptyList()), listOf(queryRegex))
                 }.map { SearchResult.LocalService(it) }
-            val results = (local + entities).sortedBy {
+            val navigation = navigationPages(snapshot.panels).filter { matches(it.searchTerms, listOf(queryRegex)) }
+                .map { SearchResult.Navigation(it) }
+            val results = (local + navigation + entities).sortedBy {
                 when (it) {
-                    is SearchResult.Entity -> if (it.id in snapshot.priority) 0 else 2
+                    is SearchResult.Entity -> if (it.id in snapshot.priority) 0 else 3
                     is SearchResult.LocalService -> 1
+                    is SearchResult.Navigation -> 2
                 }
             }
             val actions = (listOf(transmission) + config.array("actions").map { it.jsonObject }).mapNotNull { action ->
@@ -56,9 +59,7 @@ class SearchEngine {
                     action.text("icon").ifEmpty { "mdi:lamp" },
                 )
             }
-            val limit = (config["max_results"] as? JsonPrimitive)?.intOrNull?.takeIf { it != 0 } ?: 10
-            val end = if (limit < 0) (results.size + limit).coerceAtLeast(0) else limit
-            SearchOutput(results.take(end), results.size, actions)
+            SearchOutput(results, results.size, actions)
         } catch (error: IllegalArgumentException) {
             SearchOutput(error = "Invalid or unsupported search pattern: ${error.message}")
         }

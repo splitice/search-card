@@ -27,11 +27,21 @@ jobs:
         run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'
       - name: Build, lint, and compare with web card
         working-directory: android
-        run: ./gradlew assembleDebug test lint verifySearchCardParity --console=plain
+        run: ./gradlew assembleDebug assembleRelease test lint verifySearchCardParity --console=plain
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'pull_request'
         with:
-          name: search-card-debug
+          name: search-card-pr-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: search-card-signing-inputs
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -39,6 +49,67 @@ jobs:
           path: |
             android/core/build/reports/tests/
             android/app/build/reports/
+  sign:
+    # Keep private keys out of PR jobs and Gradle. This job only runs SDK signing tools.
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '16111833'
+      - name: Install signing tools
+        run: sdkmanager 'build-tools;37.0.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: search-card-signing-inputs
+          path: apk-inputs
+      - name: Sign and verify APKs
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${ANDROID_KEYSTORE_BASE64:?Missing ANDROID_KEYSTORE_BASE64 secret}"
+          : "${ANDROID_KEYSTORE_PASSWORD:?Missing ANDROID_KEYSTORE_PASSWORD secret}"
+          : "${ANDROID_KEY_ALIAS:?Missing ANDROID_KEY_ALIAS secret}"
+          : "${ANDROID_KEY_PASSWORD:?Missing ANDROID_KEY_PASSWORD secret}"
+          signing_dir="$(mktemp -d "$RUNNER_TEMP/search-card-signing.XXXXXX")"
+          trap 'rm -rf "$signing_dir"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$signing_dir/release.jks"
+          signer="$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          for variant in debug release; do
+            if [ "$variant" = debug ]; then
+              input="apk-inputs/debug/app-debug.apk"
+            else
+              input="apk-inputs/release/app-release-unsigned.apk"
+            fi
+            output="signed/$variant/app-$variant.apk"
+            mkdir -p "signed/$variant"
+            "$signer" sign --ks "$signing_dir/release.jks" \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+              --v4-signing-enabled false --out "$output" "$input"
+            "$signer" verify --verbose --print-certs "$output"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: search-card-debug
+          if-no-files-found: error
+          path: signed/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: search-card-release
+          if-no-files-found: error
+          path: signed/release/app-release.apk
   device-tests:
     runs-on: ubuntu-latest
     steps:

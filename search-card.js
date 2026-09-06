@@ -44,6 +44,20 @@ customElements.whenDefined("card-tools").then(() => {
   const cloneValue = (value) => JSON.parse(JSON.stringify(value));
   const SEARCH_PRIORITY_LABEL = "search_priority";
   const SEARCH_HIDDEN_LABEL = "search_hidden";
+  const PANEL_NAMES = {
+    energy: "Energy", history: "History", logbook: "Activity", map: "Map",
+    calendar: "Calendar", config: "Settings", developer_tools: "Developer tools",
+    lovelace: "Overview", home: "Home", todo: "To-do lists", media_browser: "Media",
+    shopping_list: "Shopping list", hassio: "Settings",
+  };
+  const PANEL_ICONS = {
+    energy: "mdi:lightning-bolt", history: "mdi:chart-box", logbook: "mdi:format-list-bulleted",
+    map: "mdi:map", calendar: "mdi:calendar", config: "mdi:cog", developer_tools: "mdi:hammer",
+    lovelace: "mdi:view-dashboard", home: "mdi:home", todo: "mdi:clipboard-list",
+    media_browser: "mdi:play-box-multiple",
+  };
+  const initialResultLimit = (value) => Number.isFinite(value) && value >= 1 ? Math.floor(value) : 10;
+  const isNavigationPath = (path) => /^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(path);
   const parseListInput = (value) =>
     value
       .split(/\n|,/)
@@ -71,6 +85,8 @@ customElements.whenDefined("card-tools").then(() => {
         _results: { type: Array },
         _activeActions: { type: Array },
         _searchValue: { type: String },
+        _dropdownOpen: { type: Boolean },
+        _visibleResultCount: { type: Number },
       };
     }
 
@@ -90,6 +106,8 @@ customElements.whenDefined("card-tools").then(() => {
       this._results = [];
       this._activeActions = [];
       this._searchValue = "";
+      this._dropdownOpen = false;
+      this._visibleResultCount = 100;
       this._hass = null;
       this._searchPriorityEntityIds = new Set();
       this._searchHiddenEntityIds = new Set();
@@ -114,6 +132,9 @@ customElements.whenDefined("card-tools").then(() => {
         this._registryMetadataRequest = null;
         this._refreshSearchLabelEntityIds();
       }
+      if (value?.panels !== oldHass?.panels && this._searchValue) {
+        this._performSearch(this._searchValue);
+      }
     }
 
     shouldUpdate(changedProps) {
@@ -121,13 +142,15 @@ customElements.whenDefined("card-tools").then(() => {
         changedProps.has("config") ||
         changedProps.has("_results") ||
         changedProps.has("_activeActions") ||
-        changedProps.has("_searchValue")
+        changedProps.has("_searchValue") ||
+        changedProps.has("_dropdownOpen") ||
+        changedProps.has("_visibleResultCount")
       );
     }
 
     setConfig(config) {
       this.config = config;
-      this.max_results = this.config.max_results || 10;
+      this.max_results = initialResultLimit(config.max_results);
       this.search_text = this.config.search_text || "Type to search...";
       this.actions = BUILTIN_ACTIONS.concat(this.config.actions || []);
       this.local_services = this.config.local_services?.services || [];
@@ -136,61 +159,203 @@ customElements.whenDefined("card-tools").then(() => {
     }
 
     getCardSize() {
-      return 4;
+      return 1;
     }
 
     render() {
-      const results = this._results.slice(0, this.max_results);
-      const rows = results.map((result) => this._createResultRow(result));
-      const actions = this._activeActions.map((x) =>
-        this._createActionRow(x[0], x[1])
-      );
-
+      const results = this._results.slice(0, this._visibleResultCount);
+      const expanded = this._dropdownOpen && (results.length > 0 || this._activeActions.length > 0);
       return ct.LitHtml`
-      <ha-card>
-        <div id="searchContainer">
-          <div id="searchTextFieldContainer">
-            <ha-input
-              id="searchText"
-              .value="${this._searchValue}"
-              @input="${this._valueChanged}"
-              type="search"
-              autocomplete="off"
-              with-clear
-              placeholder="${this.search_text}"
-            >
-              <ha-icon icon="mdi:magnify" id="searchIcon" slot="start"></ha-icon>
-            </ha-input>
+        <ha-card>
+          <div id="searchContainer">
+            <div id="searchTextFieldContainer">
+              <ha-input id="searchText" .value=${this._searchValue}
+                @input=${this._valueChanged} @focusin=${this._openDropdown} @click=${this._openDropdown}
+                @keydown=${this._searchKeydown}
+                aria-controls="results" aria-expanded=${String(expanded)}
+                type="search" autocomplete="off" with-clear placeholder=${this.search_text}>
+                <ha-icon icon="mdi:magnify" id="searchIcon" slot="start"></ha-icon>
+              </ha-input>
+            </div>
           </div>
-
-          ${
-            results.length > 0
-              ? ct.LitHtml`<div id="count">Showing ${results.length} of ${this._results.length} results</div>`
-              : ""
-          }
+        </ha-card>
+        <div id="results" popover="manual" ?hidden=${!expanded}
+          role="region" aria-label="Search results" @scroll=${this._loadMoreResults}>
+          <div id="count" role="status">${this._results.length} results</div>
+          ${this._activeActions.map((x) => this._createActionRow(x[0], x[1]))}
+          ${results.map((result) => this._createResultRow(result))}
+          ${results.length < this._results.length
+            ? ct.LitHtml`<button class="load-more" @click=${this._showMoreResults}>More results</button>` : ""}
         </div>
-        ${
-          rows.length > 0 || actions.length > 0
-            ? ct.LitHtml`<div id="results">${actions}${rows}</div>`
-            : ""
+      `;
+    }
+
+    connectedCallback() {
+      super.connectedCallback();
+      this._dropdownListeners = new AbortController();
+      const signal = this._dropdownListeners.signal;
+      const outside = (event) => {
+        if (!event.composedPath().includes(this)) this._closeDropdown();
+      };
+      document.addEventListener("pointerdown", outside, { capture: true, signal });
+      document.addEventListener("focusin", outside, { signal });
+      this.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && this._dropdownOpen) {
+          event.preventDefault();
+          event.stopPropagation();
+          this.renderRoot.querySelector("#searchText")?.focus();
+          this._closeDropdown();
         }
-      </ha-card>
-    `;
+      }, { signal });
+      window.addEventListener("scroll", () => this._queueDropdownPosition(), { capture: true, passive: true, signal });
+      window.addEventListener("resize", () => this._queueDropdownPosition(true), { signal });
+      window.visualViewport?.addEventListener("resize", () => this._queueDropdownPosition(true), { signal });
+      window.visualViewport?.addEventListener("scroll", () => this._queueDropdownPosition(), { signal });
+      this._inputResize = new ResizeObserver(() => this._queueDropdownPosition(true));
+      this.updateComplete.then(() => {
+        if (this.isConnected) this._inputResize?.observe(this.renderRoot.querySelector("#searchText"));
+      });
+    }
+
+    disconnectedCallback() {
+      this._dropdownListeners?.abort();
+      this._inputResize?.disconnect();
+      cancelAnimationFrame(this._positionFrame);
+      this._positionFrame = null;
+      this._debouncedSearch.cancel();
+      this._closeDropdown();
+      super.disconnectedCallback();
+    }
+
+    updated(changed) {
+      const dropdown = this.renderRoot.querySelector("#results");
+      if (!dropdown || dropdown.hidden) {
+        if (dropdown?.matches(":popover-open")) dropdown.hidePopover();
+        return;
+      }
+      const opening = dropdown.showPopover && !dropdown.matches(":popover-open");
+      if (opening) {
+        dropdown.style.visibility = "hidden";
+        dropdown.showPopover();
+      }
+      if (changed.has("_searchValue")) dropdown.scrollTop = 0;
+      this._queueDropdownPosition(opening || changed.has("config") || changed.has("_searchValue") || changed.has("_dropdownOpen"));
+    }
+
+    _openDropdown() { this._dropdownOpen = true; }
+
+    _closeDropdown() {
+      this._dropdownOpen = false;
+      // Close immediately, including when the dashboard disconnects the card.
+      const dropdown = this.renderRoot?.querySelector("#results");
+      if (dropdown) {
+        if (dropdown.matches(":popover-open")) dropdown.hidePopover();
+        dropdown.hidden = true;
+      }
+    }
+
+    _searchKeydown(event) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        this._openDropdown();
+        this.updateComplete.then(() => {
+          this.renderRoot.querySelector('#results [tabindex="0"], #results button')?.focus();
+        });
+      }
+    }
+
+    _showMoreResults() {
+      this._visibleResultCount = Math.min(this._results.length, this._visibleResultCount + 100);
+    }
+
+    _loadMoreResults(event) {
+      const list = event.currentTarget;
+      if (list.scrollTop + list.clientHeight >= list.scrollHeight - 160) this._showMoreResults();
+    }
+
+    _queueDropdownPosition(ensureRoom = false) {
+      if (!this._dropdownOpen) return;
+      this._ensureDropdownRoom ||= ensureRoom;
+      if (this._positionFrame != null) return;
+      this._positionFrame = requestAnimationFrame(() => {
+        this._positionFrame = null;
+        const scroll = this._ensureDropdownRoom;
+        this._ensureDropdownRoom = false;
+        this._positionDropdown(scroll);
+      });
+    }
+
+    _positionDropdown(ensureRoom) {
+      const input = this.renderRoot.querySelector("#searchText");
+      const dropdown = this.renderRoot.querySelector("#results");
+      if (!input || !dropdown || dropdown.hidden) return;
+      const viewport = window.visualViewport;
+      const top = (viewport?.offsetTop || 0) + 8;
+      const left = (viewport?.offsetLeft || 0) + 8;
+      const bottom = top + (viewport?.height || window.innerHeight) - 16;
+      const right = left + (viewport?.width || window.innerWidth) - 16;
+      let rect = input.getBoundingClientRect();
+      // max_results sizes the popup, never the result set or the paging batch.
+      // Entity rows are approximately 56px; count and popup padding are additional.
+      const countHeight = dropdown.querySelector("#count")?.getBoundingClientRect().height || 34;
+      const initialHeight = this.max_results * 56 + countHeight + 10;
+      const desired = Math.min(initialHeight, dropdown.scrollHeight, Math.max(0, bottom - top - rect.height - 4));
+      if (ensureRoom && rect.bottom + 4 + desired > bottom) {
+        // HA dashboards can scroll inside several shadow roots. Move only as far as
+        // needed, starting with the nearest scroll container, without resizing the card.
+        let ancestor = input;
+        while (ancestor) {
+          ancestor = ancestor.parentElement || ancestor.getRootNode().host;
+          if (!ancestor) break;
+          if (ancestor === document.scrollingElement || /auto|scroll/.test(getComputedStyle(ancestor).overflowY)) {
+            const remaining = input.getBoundingClientRect().bottom + 4 + desired - bottom;
+            if (remaining <= 0) break;
+            ancestor.scrollTop += remaining;
+          }
+        }
+        rect = input.getBoundingClientRect();
+      }
+      if (rect.bottom < top || rect.top > bottom) {
+        this._closeDropdown();
+        return;
+      }
+      const below = Math.max(0, bottom - rect.bottom - 4);
+      const above = Math.max(0, rect.top - top - 4);
+      // At the end of a non-scrollable page, a select-style popup may need to flip.
+      const upward = below < Math.min(desired, 120) && above > below;
+      const height = Math.min(desired, upward ? above : below);
+      const width = Math.min(rect.width, right - left);
+      Object.assign(dropdown.style, {
+        left: `${Math.max(left, Math.min(rect.left, right - width))}px`,
+        top: `${upward ? rect.top - height - 4 : Math.max(top, rect.bottom + 4)}px`,
+        width: `${width}px`, maxHeight: `${height}px`, visibility: "visible",
+      });
     }
 
     _createResultRow(result) {
+      if (result.type === "navigation") {
+        return this._createLocalServiceRow({ ...result.panel, url: result.panel.path, category: "Home Assistant" }, true);
+      }
       if (result.type === "local_service") {
         return this._createLocalServiceRow(result.service);
       }
 
       const entity_id = result.entity_id;
       var row = ct.createEntityRow({ entity: entity_id });
-      row.addEventListener("click", () => ct.moreInfo(entity_id));
+      row.tabIndex = 0;
+      const open = () => { this._closeDropdown(); ct.moreInfo(entity_id); };
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", (event) => {
+        if ((event.key === "Enter" || event.key === " ") && event.composedPath()[0] === row) {
+          event.preventDefault();
+          open();
+        }
+      });
       row.hass = this.hass;
       return row;
     }
 
-    _createLocalServiceRow(service) {
+    _createLocalServiceRow(service, navigation = false) {
       const secondaryText = service.category || service.url;
       const icon = service.icon || "mdi:server-network";
 
@@ -199,8 +364,8 @@ customElements.whenDefined("card-tools").then(() => {
           class="local-service-row"
           role="link"
           tabindex="0"
-          @click=${() => this._openLocalService(service.url)}
-          @keydown=${(ev) => this._handleLocalServiceKeydown(ev, service.url)}
+          @click=${() => navigation ? this._openNavigation(service.url) : this._openLocalService(service.url)}
+          @keydown=${(ev) => this._handleLocalServiceKeydown(ev, service.url, navigation)}
         >
           <ha-icon class="local-service-icon" .icon=${icon}></ha-icon>
           <div class="local-service-text">
@@ -234,32 +399,47 @@ customElements.whenDefined("card-tools").then(() => {
 
     _valueChanged(ev) {
       this._searchValue = ev.target.value;
+      this._visibleResultCount = 100;
+      this._dropdownOpen = true;
       this._debouncedSearch(this._searchValue);
     }
 
     _clearInput() {
+      this._debouncedSearch.cancel();
+      this._closeDropdown();
+      this._visibleResultCount = 100;
       this._searchValue = "";
       this._results = [];
       this._activeActions = [];
     }
 
     _openLocalService(url) {
+      this._closeDropdown();
       const newWindow = window.open(url, "_blank", "noopener");
       if (newWindow) {
         newWindow.opener = null;
       }
     }
 
-    _handleLocalServiceKeydown(ev, url) {
+    _openNavigation(path) {
+      if (!isNavigationPath(path)) return;
+      this._closeDropdown();
+      const from = window.location.pathname + window.location.search + window.location.hash;
+      window.history.pushState({ from }, "", path);
+      window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+    }
+
+    _handleLocalServiceKeydown(ev, url, navigation = false) {
       if (ev.key === "Enter" || ev.key === " ") {
         ev.preventDefault();
-        this._openLocalService(url);
+        if (navigation) this._openNavigation(url);
+        else this._openLocalService(url);
       }
     }
 
     _debounce(func, wait) {
       let timeout;
-      return function executedFunction(...args) {
+      const debounced = function executedFunction(...args) {
         const later = () => {
           clearTimeout(timeout);
           func(...args);
@@ -267,6 +447,8 @@ customElements.whenDefined("card-tools").then(() => {
         clearTimeout(timeout);
         timeout = setTimeout(later, wait);
       };
+      debounced.cancel = () => clearTimeout(timeout);
+      return debounced;
     }
 
     _performSearch(searchText) {
@@ -288,7 +470,7 @@ customElements.whenDefined("card-tools").then(() => {
         );
 
         this._results = this._sortResults(
-          localServiceResults.concat(entityResults)
+          localServiceResults.concat(this._getNavigationResults(searchRegex), entityResults)
         );
         this._activeActions = this._getActivatedActions(searchText);
       } catch (err) {
@@ -417,7 +599,28 @@ customElements.whenDefined("card-tools").then(() => {
         return 1;
       }
 
-      return 2;
+      return result.type === "navigation" ? 2 : 3;
+    }
+
+    _getNavigationResults(searchRegex) {
+      const seen = new Set();
+      // hass.panels is the authenticated get_panels result, including dashboard registrations.
+      return Object.values(this.hass.panels || {}).flatMap((panel) => {
+        if (!panel || typeof panel.title !== "string" || !panel.title.trim() ||
+            typeof panel.url_path !== "string" || !isNavigationPath(`/${panel.url_path}`) ||
+            ["app", "notfound", "_my_redirect"].includes(panel.url_path) ||
+            panel.show_in_sidebar === false || panel.default_visible === false) return [];
+        const path = `/${panel.url_path}`;
+        if (seen.has(path)) return [];
+        seen.add(path);
+        const name = Object.hasOwn(PANEL_NAMES, panel.title) ? PANEL_NAMES[panel.title] : panel.title;
+        const fields = [name, panel.title, panel.url_path,
+          panel.component_name === "lovelace" ? "dashboard" : panel.component_name];
+        if (!fields.some((field) => typeof field === "string" && searchRegex.test(field))) return [];
+        return [{ type: "navigation", panel: { name, path,
+          icon: (typeof panel.icon === "string" && panel.icon) ||
+            (Object.hasOwn(PANEL_ICONS, panel.component_name) ? PANEL_ICONS[panel.component_name] : "mdi:view-dashboard") } }];
+      }).sort((a, b) => a.panel.name.localeCompare(b.panel.name));
     }
 
     _getLocalServiceResults(searchRegex) {
@@ -492,14 +695,34 @@ customElements.whenDefined("card-tools").then(() => {
       #count {
         text-align: right;
         font-style: italic;
+        padding: 8px 12px;
+        color: var(--secondary-text-color);
       }
       #results {
-        width: 90%;
+        position: fixed;
+        inset: auto;
+        margin: 0;
+        box-sizing: border-box;
+        padding: 4px;
+        overflow: auto;
+        overscroll-behavior: contain;
+        overflow-anchor: none;
+        background: var(--ha-card-background, var(--card-background-color, white));
+        color: var(--primary-text-color);
+        border: 1px solid var(--divider-color, #ddd);
+        border-radius: var(--ha-card-border-radius, 12px);
+        box-shadow: 0 8px 24px #0004;
+        z-index: 1000;
+      }
+      #results[hidden] { display: none !important; }
+      #results > :not(#count) { min-height: 48px; }
+      .load-more {
         display: block;
-        padding-bottom: 15px;
-        margin-top: 15px;
-        margin-left: auto;
-        margin-right: auto;
+        width: 100%;
+        color: var(--primary-color);
+        background: transparent;
+        border: 0;
+        cursor: pointer;
       }
       .local-service-row {
         display: flex;
@@ -578,14 +801,11 @@ customElements.whenDefined("card-tools").then(() => {
               />
             </label>
             <label class="field">
-              <span class="label">Maximum results</span>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                .value=${String(config.max_results || 10)}
-                @input=${(ev) => this._updateNumberField("max_results", ev)}
-              />
+              <span class="label">Max initial results</span>
+              <input type="number" min="1" step="1"
+                .value=${String(initialResultLimit(config.max_results))}
+                @input=${(ev) => this._updateConfigField("max_results", initialResultLimit(Number(ev.target.value)))} />
+              <span class="helper">Approximate visible rows before scrolling. All matches remain available.</span>
             </label>
           </div>
 
@@ -834,14 +1054,6 @@ customElements.whenDefined("card-tools").then(() => {
       this._emitConfig({
         ...this._config,
         [field]: value,
-      });
-    }
-
-    _updateNumberField(field, ev) {
-      const value = Number.parseInt(ev.target.value, 10);
-      this._emitConfig({
-        ...this._config,
-        [field]: Number.isFinite(value) && value > 0 ? value : 10,
       });
     }
 

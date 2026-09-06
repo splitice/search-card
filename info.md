@@ -9,7 +9,7 @@ A Lovelace card that enables quick entity searching, local service shortcuts, an
 - ⚡ Custom actions with regex-based matching
 - 🎯 Regex-based entity filtering
 - 🛠️ Full Lovelace visual editor support
-- 📋 Configurable result limits and placeholder text
+- 📋 Scrollable result dropdown and customizable placeholder text
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ A Lovelace card that enables quick entity searching, local service shortcuts, an
 
 | Name             | Type     | Default             | Description                                 |
 | ---------------- | -------- | ------------------- | ------------------------------------------- |
-| max_results      | integer  | 10                  | Maximum number of search results to display |
+| max_results      | integer  | 10                  | Approximate visible rows before scrolling; never limits total matches |
 | search_text      | string   | "Type to search..." | Custom placeholder text                     |
 | actions          | object   | optional            | Custom action definitions                   |
 | local_services   | object   | optional            | Searchable local service links              |
@@ -33,7 +33,6 @@ A Lovelace card that enables quick entity searching, local service shortcuts, an
 
 ```yaml
 type: custom:search-card
-max_results: 10
 search_text: "Search entities..."
 excluded_regex:
   - battery
@@ -103,3 +102,5 @@ Planned features:
 - "Show all" results button
 - Additional action types
 - More polished UI
+
+Search results now open over the dashboard in a scrollable dropdown. All matches are reachable; `max_results` sets the approximate number of visible rows before scrolling (default 10), capped by available space. On mobile, the dashboard scrolls as needed to keep the dropdown visible.

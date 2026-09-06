@@ -32,6 +32,7 @@ android {
             keyPassword = props.getProperty("keyPassword")
         }
         buildTypes.getByName("release").signingConfig = signingConfigs.getByName("localRelease")
+        buildTypes.getByName("debug").signingConfig = signingConfigs.getByName("localRelease")
     }
     buildTypes.getByName("release") {
         isMinifyEnabled = true
@@ -58,4 +59,5 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation(platform("androidx.compose:compose-bom:2025.10.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

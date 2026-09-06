@@ -16,6 +16,7 @@ val reference = tasks.register<Exec>("generateReference") {
 }
 tasks.test {
     dependsOn(reference)
+    inputs.files(rootProject.file("fixtures/search.json"), layout.buildDirectory.file("reference.json"))
     systemProperty("fixtures", rootProject.file("fixtures/search.json").absolutePath)
     systemProperty("reference", layout.buildDirectory.file("reference.json").get().asFile.absolutePath)
 }

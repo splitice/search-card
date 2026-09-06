@@ -157,19 +157,19 @@
       }
     },
     {
-      "name": "limit",
+      "name": "legacy positive limit is ignored",
       "config": {
         "max_results": 2
       }
     },
     {
-      "name": "zero limit defaults",
+      "name": "legacy zero limit is ignored",
       "config": {
         "max_results": 0
       }
     },
     {
-      "name": "negative slice",
+      "name": "legacy negative limit is ignored",
       "config": {
         "max_results": -1
       }
@@ -392,6 +392,217 @@
           "attributes": {}
         }
       }
+    },
+    {
+      "name": "navigation pages and existing result ordering",
+      "query": ".",
+      "panels": {
+        "energy": {
+          "title": "energy",
+          "url_path": "energy",
+          "component_name": "energy"
+        },
+        "dash": {
+          "title": "Phone Dashboard",
+          "url_path": "dashboard-phone",
+          "component_name": "lovelace",
+          "icon": "mdi:cellphone"
+        },
+        "settings": {
+          "title": "config",
+          "url_path": "config",
+          "component_name": "config"
+        },
+        "hidden": {
+          "title": "Hidden dashboard",
+          "url_path": "dashboard-hidden",
+          "component_name": "lovelace",
+          "show_in_sidebar": false
+        },
+        "untitled": {
+          "url_path": "profile",
+          "component_name": "profile"
+        },
+        "default_hidden": {
+          "title": "Hidden default",
+          "url_path": "hidden-default",
+          "default_visible": false
+        },
+        "internal": {
+          "title": "Internal",
+          "url_path": "app"
+        },
+        "unsafe": {
+          "title": "External",
+          "url_path": "//evil.example"
+        },
+        "duplicate": {
+          "title": "Duplicate",
+          "url_path": "energy"
+        }
+      },
+      "config": {}
+    },
+    {
+      "name": "navigation title matching",
+      "query": "energy",
+      "panels": {
+        "energy": {
+          "title": "energy",
+          "url_path": "energy",
+          "component_name": "energy"
+        }
+      },
+      "config": {}
+    },
+    {
+      "name": "navigation dashboard route matching",
+      "query": "dashboard-phone",
+      "panels": {
+        "dash": {
+          "title": "Phone Dashboard",
+          "url_path": "dashboard-phone",
+          "component_name": "lovelace",
+          "icon": "mdi:cellphone"
+        }
+      },
+      "config": {}
+    },
+    {
+      "name": "navigation dashboard category",
+      "query": "dashboard",
+      "panels": {
+        "dash": {
+          "title": "Phone Dashboard",
+          "url_path": "dashboard-phone",
+          "component_name": "lovelace",
+          "icon": "mdi:cellphone"
+        }
+      },
+      "config": {}
+    },
+    {
+      "name": "navigation builtin display title",
+      "query": "Settings",
+      "panels": {
+        "settings": {
+          "title": "config",
+          "url_path": "config",
+          "component_name": "config"
+        }
+      },
+      "config": {}
+    },
+    {
+      "name": "navigation is not truncated by legacy limit",
+      "query": ".",
+      "panels": {
+        "energy": {
+          "title": "energy",
+          "url_path": "energy",
+          "component_name": "energy"
+        },
+        "dash": {
+          "title": "Phone Dashboard",
+          "url_path": "dashboard-phone",
+          "component_name": "lovelace",
+          "icon": "mdi:cellphone"
+        },
+        "settings": {
+          "title": "config",
+          "url_path": "config",
+          "component_name": "config"
+        }
+      },
+      "config": {
+        "max_results": 2
+      }
+    },
+    {
+      "name": "entity filters do not suppress navigation",
+      "query": "energy",
+      "panels": {
+        "energy": {
+          "title": "energy",
+          "url_path": "energy",
+          "component_name": "energy"
+        }
+      },
+      "config": {
+        "included_regex": [
+          "^light\\."
+        ],
+        "excluded_regex": [
+          "."
+        ]
+      }
+    },
+    {
+      "name": "hidden and invalid navigation excluded",
+      "query": "Hidden|Internal|External|Duplicate",
+      "panels": {
+        "hidden": {
+          "title": "Hidden dashboard",
+          "url_path": "dashboard-hidden",
+          "component_name": "lovelace",
+          "show_in_sidebar": false
+        },
+        "untitled": {
+          "url_path": "profile",
+          "component_name": "profile"
+        },
+        "default_hidden": {
+          "title": "Hidden default",
+          "url_path": "hidden-default",
+          "default_visible": false
+        },
+        "internal": {
+          "title": "Internal",
+          "url_path": "app"
+        },
+        "unsafe": {
+          "title": "External",
+          "url_path": "//evil.example"
+        }
+      },
+      "config": {}
+    },
+    {
+      "name": "empty query with navigation",
+      "query": "",
+      "panels": {
+        "energy": {
+          "title": "energy",
+          "url_path": "energy",
+          "component_name": "energy"
+        }
+      },
+      "config": {}
+    },
+    {
+      "name": "invalid regex with navigation",
+      "query": "[",
+      "panels": {
+        "energy": {
+          "title": "energy",
+          "url_path": "energy",
+          "component_name": "energy"
+        }
+      },
+      "config": {}
+    },
+    {
+      "name": "all 250 matches remain available",
+      "query": "sensor.bulk",
+      "generated_entities": 250
+    },
+    {
+      "name": "legacy ten result configuration still returns all 250",
+      "query": "sensor.bulk",
+      "config": {
+        "max_results": 10
+      },
+      "generated_entities": 250
     }
   ]
 }

@@ -4,5 +4,6 @@ local.properties
 *.jks
 *.keystore
 signing.properties
+signing-private/
 .idea/
 *.iml

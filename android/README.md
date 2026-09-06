@@ -27,15 +27,34 @@ cd android
 
 On Windows use `gradlew.bat`. `installDebug` requires a connected device/emulator with USB debugging enabled. The APK is **app/build/outputs/apk/debug/app-debug.apk**. It can also be copied to your phone and installed with permission to install apps from that source. No Google Play services or Home Assistant Companion app is required.
 
-### Signed release
+### Persistent signing and GitHub Actions
 
-Create and retain your own signing key, for example:
+Push and manual workflow runs publish **search-card-release** (recommended for everyday use) and **search-card-debug**, both signed with the same persistent key. Signing runs in a separate job after successful build, unit tests, lint, and parity checks; that job does not check out or execute repository code. PR jobs never receive the key and publish **search-card-pr-debug** with a temporary debug signature. The **search-card-signing-inputs** artifact is an intermediate build artifact, not the signed download to install.
+
+Configure these **repository Actions secrets** in GitHub Settings → Secrets and variables → Actions:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Base64 encoding of the complete JKS keystore file |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | `search-card` for the provided keystore |
+| `ANDROID_KEY_PASSWORD` | Private-key password |
+
+If using the provided signing backup, extract its `signing-private/` directory into `android/`, retain a private backup, and run this from the repository root to install all four secrets:
 
 ```sh
-keytool -genkeypair -keystore /absolute/path/to/search-card.jks -alias search-card -keyalg RSA -keysize 3072 -validity 10000
+gh secret set --repo splitice/search-card --env-file android/signing-private/github-secrets.env
 ```
 
-Put the following in untracked `android/signing.properties` (paths are relative to `android/`):
+The backup contains the private key (`search-card-release.jks`), password, ready-to-import secret values, local signing configuration, and public certificate. Keep the entire directory private; it is excluded from Git. Do not upload it as a workflow artifact or commit it. Missing secrets fail the signing job rather than producing a silently incompatible download. The workflow removes its temporary keystore after signing and prints only public certificate information when verifying each APK.
+
+For a new project without an existing signing key, create and retain one **once**, for example:
+
+```sh
+keytool -genkeypair -storetype JKS -keystore /absolute/path/to/search-card.jks -alias search-card -keyalg RSA -keysize 3072 -validity 10000
+```
+
+For local builds, copy the supplied `android/signing-private/signing.properties` to `android/signing.properties`, or put the following in that untracked file (paths are relative to `android/`):
 
 ```properties
 storeFile=/absolute/path/to/search-card.jks
@@ -44,7 +63,9 @@ keyAlias=search-card
 keyPassword=YOUR_KEY_PASSWORD
 ```
 
-Run `./gradlew assembleRelease`; the signed APK appears under `app/build/outputs/apk/release/`. Without these properties, release builds are unsigned. Never commit signing keys, passwords, or tokens. Keep the same key and increment `versionCode` in `app/build.gradle.kts` for upgrades. Debug and release keys differ, so switching keys requires uninstalling the previous app (which clears its account data).
+With this configuration, both `assembleDebug` and `assembleRelease` use your persistent key. Release output is `app/build/outputs/apk/release/app-release.apk`. Without it, local debug builds use the workstation's debug key and release builds are unsigned. Keep the same signing key and increment `versionCode` in `app/build.gradle.kts` when publishing new versions; local and CI builds use that same version code.
+
+Install matching-key updates with `adb install -r path/to/app-release.apk` to retain app data. A new signing key cannot update an old differently signed installation without the old key or a valid signing lineage. A normal uninstall clears account data, and `adb uninstall -k` does **not** bypass the signature requirement for retained data. There is no automatic uninstall in this workflow. If the old key is unavailable, transitioning to the persistent key requires a one-time clean install and sign-in; subsequent matching-key updates preserve storage. See [Android's update requirements](https://developer.android.com/google/play/app-updates).
 
 ## Setup and use
 
@@ -60,7 +81,11 @@ Widget placement uses the launcher's click bounds and the current keyboard/syste
 
 Configuration refreshes when the panel opens, reconnects, or you press Refresh. No HACS resource URL or copied YAML is needed. Template-generated card configurations, arbitrary wrapper evaluation, and conditional visibility rules are not evaluated; choose a static card configuration. This is a search client, so any wrapper's dashboard visibility conditions are not access controls. Home Assistant still enforces account permissions for API operations.
 
-When offline, the last successfully loaded snapshot remains searchable and shows its age. Home Assistant actions are disabled until fresh states/configuration are loaded. Links remain available. Failed or timed-out service calls are **not replayed**; check the actual result before retrying. If registry access is denied, a visible warning explains that priority/hidden label filtering could not be applied, matching the web card's metadata-failure fallback.
+With a saved session, the first status is **Connecting…** while the local snapshot loads and the app reconnects. Cache-age text is not displayed. When offline, the last successfully loaded snapshot remains searchable. Home Assistant actions are disabled until fresh states/configuration are loaded. Links remain available. Failed or timed-out service calls are **not replayed**; check the actual result before retrying. If registry access is denied, a visible warning explains that priority/hidden label filtering could not be applied, matching the web card's metadata-failure fallback.
+
+Search also includes registered sidebar pages such as Energy, Settings, and dashboards. These come from the authenticated `get_panels` response and refresh whenever the panel reconnects or you press Refresh. Their names, URL paths, and the `dashboard` category are searchable; built-in labels are English and custom titles are preserved. Navigation results follow priority entities and local services, precede ordinary entities, and are included in the total result count. Untitled, internal, and server-hidden entries are excluded. Cached navigation links remain usable offline and open through Companion with a browser fallback, using the selected server's origin. If page metadata cannot be loaded, entity search still works and a warning is shown.
+
+All matches remain searchable and scrollable, including with an old `max_results: 10` configuration. `max_results` sizes the web dropdown on desktop and mobile; it never truncates matches in either engine. The native panel uses the available window and keyboard space for its height. Android exposes the first 100 results, adds batches of 100 when you approach the end, and composes only visible rows using a lazy list. Paging uses the local snapshot and makes no extra network requests. A new query resets the list to the first page; state restoration retains the loaded page and scroll position. The count shows all matches, including those not yet loaded into the list.
 
 ## Battery and account storage
 
@@ -72,7 +97,7 @@ Refresh tokens are AES-GCM encrypted with an Android Keystore key. Entity snapsh
 
 ## Maintaining compatibility with search-card.js
 
-The web card remains unchanged. `core/` holds the Kotlin engine; `app/` handles authentication, networking, lifecycle, storage, and UI. The application does not load or execute JavaScript search code at runtime.
+The web card and Kotlin port share comparison fixtures, including navigation pages and their click destinations. `core/` holds the Kotlin engine; `app/` handles authentication, networking, lifecycle, storage, and UI. The application does not load or execute JavaScript search code at runtime.
 
 `tools/reference.mjs` loads the **actual repository search-card.js** in Node with small frontend stubs. It calls the card's search and action-row methods against `fixtures/search.json`. Gradle generates reference results under `core/build/`, and Kotlin tests compare ordered results, counts, actions, icons, and nested service payloads. The reviewed source hash in `compatibility.json` also catches upstream changes not covered by the fixtures. Both the hash check and parity tests run in CI whenever the Android project or web card changes.
 
@@ -88,13 +113,13 @@ Kotlin's regex engine is JVM `Pattern`, with ASCII case-insensitive matching for
 
 ## Verification
 
-Automated checks cover search behavior, dashboard discovery/reselection, OAuth callback validation, label metadata, snapshot reconciliation/serialization, token HTTP errors, token response threading and cancellation during body reads, socket events, service failures without replay, and closing a socket with pending work. Placement tests cover exact alignment, minimum upward movement, keyboard animation, narrow widgets, large text, cutouts, small windows, and invalid/stale bounds. Device tests check bounds delivered through widget PendingIntents, switching widget instances, query preservation across recreation, missing-bounds fallback, repeated immediate widget dismissal, control shutdown before closing animations, search focus and background taps, first-launch setup and login across activity stops/recreation, Keystore encryption, clearing the cache on logout, and the widget's no-update policy:
+Automated checks cover search behavior, dashboard discovery/reselection, OAuth callback validation, label metadata, snapshot reconciliation/serialization, token HTTP errors, token response threading and cancellation during body reads, socket events, service failures without replay, and closing a socket with pending work. Placement tests cover exact alignment, minimum upward movement, keyboard animation, narrow widgets, large text, cutouts, small windows, and invalid/stale bounds. Device tests also cover scrolling past 100 and 200 matches, query resets, and paging state restoration. Device tests check bounds delivered through widget PendingIntents, switching widget instances, query preservation across recreation, missing-bounds fallback, repeated immediate widget dismissal, control shutdown before closing animations, search focus and background taps, first-launch setup and login across activity stops/recreation, Keystore encryption, clearing the cache on logout, and the widget's no-update policy:
 
 ```sh
 ./gradlew connectedDebugAndroidTest
 ```
 
-GitHub Actions builds a downloadable debug APK and runs device tests on Android 17 (API 37). Use the `system-images;android-37.0;google_apis;x86_64` emulator image with a configured WebView provider for the login test. Those tests do not log into a private Home Assistant instance or operate actual devices.
+GitHub Actions builds signed debug/release downloads on push/manual runs and runs device tests on Android 17 (API 37). PR debug artifacts are for testing and do not share the persistent signing identity. Use the `system-images;android-37.0;google_apis;x86_64` emulator image with a configured WebView provider for the login test. Those tests do not log into a private Home Assistant instance or operate actual devices.
 
 Before installing a release for daily use, perform this manual matrix on Android 17 (or an API 37 emulator). It requires your own server/login:
 

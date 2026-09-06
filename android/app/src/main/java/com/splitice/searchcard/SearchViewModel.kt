@@ -13,13 +13,19 @@ import okhttp3.OkHttpClient
 data class PanelState(
     val snapshot: Snapshot? = null,
     val connected: Boolean = false,
-    val status: String = "Sign in to get started",
+    val status: String = "Connecting…",
     val error: String? = null,
     val needsDashboard: Boolean = false,
     val needsLogin: Boolean = false,
     val choices: List<CardCandidate> = emptyList(),
     val busyActions: Set<String> = emptySet(),
 )
+
+internal fun initialPanelState(hasDashboard: Boolean, hasSession: Boolean): PanelState = when {
+    !hasDashboard -> PanelState(needsDashboard = true, status = "Enter your Home Assistant dashboard URL")
+    !hasSession -> PanelState(needsLogin = true, status = "Sign in to Home Assistant")
+    else -> PanelState(status = "Connecting…")
+}
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
     val storage = Storage(application)
@@ -36,7 +42,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private var selection: CompletableDeferred<CardCandidate>? = null
     private var started = false
     private var accountEpoch = 0
-    val state = MutableStateFlow(PanelState(needsDashboard = storage.settings.dashboard.isBlank()))
+    val state = MutableStateFlow(initialPanelState(storage.settings.dashboard.isNotBlank(), storage.hasSavedSession))
     val query = MutableStateFlow("")
     private val engine = SearchEngine()
     @OptIn(FlowPreview::class)
@@ -47,6 +53,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun start() {
         started = true
         if (foreground?.isActive == true) return
+        val initial = initialPanelState(storage.settings.dashboard.isNotBlank(), storage.hasSavedSession)
+        state.update { initial.copy(snapshot = it.snapshot) }
         val previous = foreground
         foreground = viewModelScope.launch {
             previous?.join()
@@ -94,6 +102,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             session.request("subscribe_events", buildJsonObject { put("event_type", "state_changed") })
             val states = async { session.request("get_states").jsonArray }
             val services = async { session.request("get_services").jsonObject }
+            val panels = async {
+                try { session.request("get_panels").jsonObject }
+                catch (_: HaCommandError) { null }
+            }
             val dashboard = async { session.request("lovelace/config", buildJsonObject { put("url_path", address.dashboard) }).jsonObject }
             val metadata = async {
                 try {
@@ -111,9 +123,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             }
             withContext(Dispatchers.IO) { storage.settings = storage.settings.copy(selected = chosen.selection) }
             val labels = metadata.await()
+            val navigation = panels.await()
             val fetched = states.await().map { it.jsonObject }.associateBy { it.text("entity_id") }
             var snapshot = Snapshot(chosen.config, JsonObject(fetched), services.await(),
-                labels?.first ?: emptySet(), labels?.second ?: emptySet(), System.currentTimeMillis())
+                labels?.first ?: emptySet(), labels?.second ?: emptySet(), System.currentTimeMillis(),
+                panels = navigation ?: JsonObject(emptyMap()))
             // Events received since subscribing are applied after the snapshot, using timestamps.
             while (true) {
                 val event = session.events.tryReceive().getOrNull() ?: break
@@ -121,7 +135,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             }
             withContext(Dispatchers.IO) { storage.saveSnapshot(snapshot) }
             state.update { it.copy(snapshot = snapshot, connected = true, choices = emptyList(),
-                status = "Connected", error = if (labels == null) "Label metadata unavailable; priority/hidden labels could not be applied." else null) }
+                status = "Connected", error = listOfNotNull(
+                    if (labels == null) "Label metadata unavailable; priority/hidden labels could not be applied." else null,
+                    if (navigation == null) "Navigation pages unavailable; refresh to try again." else null,
+                ).joinToString("\n").ifEmpty { null }) }
             val cacheWriter = launch {
                 state.map { it.snapshot }.distinctUntilChanged().debounce(750).collect { value ->
                     if (value != null) withContext(Dispatchers.IO) { storage.saveSnapshot(value) }
@@ -167,7 +184,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         clearWebLogin()
         storage.settings = AccountSettings(dashboard = parsed.url)
         accessToken = null
-        state.value = PanelState(needsLogin = true)
+        state.value = initialPanelState(hasDashboard = true, hasSession = false)
         query.value = ""
         start()
     }
@@ -199,7 +216,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         storage.clearAccount(); accessToken = null; accessExpires = 0
         clearWebLogin()
         query.value = ""
-        state.value = PanelState(needsDashboard = origin == null, needsLogin = origin != null)
+        state.value = initialPanelState(hasDashboard = origin != null, hasSession = false)
         // Best effort revocation belongs to the visible screen, never background work.
         started = true
         foreground = viewModelScope.launch {

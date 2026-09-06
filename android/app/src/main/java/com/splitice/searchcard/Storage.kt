@@ -34,6 +34,8 @@ class Storage(context: Context) {
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
     }
+    val hasSavedSession: Boolean get() = preferences.contains("refreshToken")
+
     fun refreshToken(): String? {
         val encoded = preferences.getString("refreshToken", null) ?: return null
         return runCatching {
