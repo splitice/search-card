@@ -136,18 +136,21 @@ Automated checks cover button/select/text/number payloads, option and text valid
 ./gradlew connectedDebugAndroidTest
 ```
 
-GitHub Actions builds signed debug/release downloads on push/manual runs and runs device tests on Android 17 (API 37). PR debug artifacts are for testing and do not share the persistent signing identity. The device job uses Emulator 37.2.7 (build 16195039), `system-images;android-37.0;google_apis;x86_64`, a Pixel 2 profile, 4096 MB RAM, a 512 MB Java heap, SwiftShader graphics, and KVM acceleration. Avoid the generic AVD defaults (including a 64 MB heap). On Linux, check `emulator -accel-check` before running the suite; software-only x86 emulation can exceed Android's system-server boot watchdog timeout. CI requires acceleration instead of silently falling back, verifies the device reports API 37, and uploads boot diagnostics alongside test reports.
+GitHub Actions builds signed debug/release downloads on push/manual runs and runs device tests on Android 17 QPR1 (API 37.1, base API 37). PR debug artifacts do not share the persistent signing identity. The device job uses Emulator 37.1.11 stable (build 15917651), `system-images;android-37.1;google_apis_ps16k;x86_64` revision 9, a Pixel 2 profile, 4096 MB RAM, a 512 MB Java heap, an 8 GB data partition, software graphics, and KVM acceleration. The app's minimum/target SDK remains 37. Avoid generic AVD defaults: the 64 MB heap and small data partition cause startup/install failures. On Linux, check `emulator -accel-check` before running the suite; software-only x86 emulation can exceed Android's system-server boot watchdog timeout. CI requires acceleration, verifies base API 37, and uploads boot diagnostics alongside test reports.
 
 Normal CI tests use simulated service calls and do not operate actual devices. The optional `LiveAccountTest` signs in through the actual Android login WebView, fetches the selected dashboard and entity states, checks that native controls are available, reconnects with cached data, checks that UID network counters stop changing after dismissal, and logs out. It does not invoke entity services. To run it in Actions, set the encrypted repository secret `ANDROID_RUNTIME_TEST_ACCOUNT` to a JSON object with `dashboard`, `username`, and `password` strings, then manually run the Android workflow with **live-account** enabled. Use a dedicated test account without MFA for this automated smoke test; MFA remains a manual acceptance check. The runner places credentials in private app storage, the test deletes the file after reading it, and boot log collection stops before authentication. No account is embedded in the APK. Locally, provide the same JSON as `HA_RUNTIME_ACCOUNT` and run `bash tools/run-device-tests.sh` with a booted Android 17 emulator; do not commit the account JSON or print it in shell tracing.
 
-The reviewed API 37 image (`CE2A.260420.019`, Google APIs revision 6) has a graphics-mapper incompatibility: SurfaceFlinger aborts with `Assertion failed: !rcEnc->featureInfo()->hasReadColorBufferDma`, causing framework restarts even after `sys.boot_completed=1`. CI disables the host feature that advertises this DMA path. Use the same workaround locally (replace `YOUR_API_37_AVD` with your AVD name):
+Android 17's graphics mapper requires DMA readback support. Without it, SurfaceFlinger aborts with `Assertion failed: !rcEnc->featureInfo()->hasReadColorBufferDma` and restarts the framework even after `sys.boot_completed=1`. This message prints the **fatal condition**, so DMA must be enabled. CI explicitly enables both `GLDirectMem` and `HasSharedSlotsHostMemoryAllocator`, through the environment and command line, using the original SDK binaries. No Android/SystemUI/APK patch is needed.
+
+For the same test configuration, set the AVD resources listed above, then run:
 
 ```sh
-emulator -avd YOUR_API_37_AVD -accel on -gpu swiftshader \
-  -feature -HasSharedSlotsHostMemoryAllocator -no-snapshot
+ANDROID_EMULATOR_FEATURES=GLDirectMem,HasSharedSlotsHostMemoryAllocator \
+  emulator -avd YOUR_API_37_1_AVD -accel on -gpu software \
+  -feature GLDirectMem,HasSharedSlotsHostMemoryAllocator -no-snapshot
 ```
 
-This changes the emulator's graphics transport; it does not disable SystemUI or alter the APK. Recheck the workaround when updating the emulator or system image.
+The environment setting also reaches the renderer's feature controller. Retest the configuration when updating the emulator or system image.
 
 Before installing a release for daily use, perform this manual matrix on Android 17 (or an API 37 emulator). It requires your own server/login:
 
