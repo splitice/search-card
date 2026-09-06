@@ -1,6 +1,7 @@
 package com.splitice.searchcard
 
 import android.appwidget.AppWidgetManager
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
@@ -28,36 +29,65 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.splitice.searchcard.core.*
 import kotlinx.serialization.json.*
 
 class MainActivity : ComponentActivity() {
     private val model: SearchViewModel by viewModels()
     private var panelVisible by mutableStateOf(false)
+    private var foregroundSession by mutableIntStateOf(0)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme(primary = Color(0xFF80D2FF))
                 else lightColorScheme(primary = Color(0xFF00658D))) {
-                SearchPanel(model, panelVisible, ::finish, ::openLink, ::pinWidget)
+                SearchPanel(model, panelVisible, foregroundSession, ::finish, ::openLink, ::openEntity, ::pinWidget,
+                    canRequestFocus = { !isFinishing && !isDestroyed })
             }
         }
     }
-    override fun onStart() { super.onStart(); panelVisible = true; model.start() }
+    override fun onStart() { super.onStart(); foregroundSession++; panelVisible = true; model.start() }
     override fun onStop() { panelVisible = false; model.stop(); super.onStop() }
+    override fun finish() {
+        if (isFinishing || isDestroyed) return
+        // Closing animations can delay onStop. Stop work at the dismissal itself.
+        panelVisible = false
+        model.stop()
+        super.finish()
+    }
     private fun openLink(url: String) {
         try {
             val uri = Uri.parse(url)
             require(uri.scheme in listOf("https", "http") && uri.host != null) { "Only HTTP and HTTPS links are supported." }
             startActivity(Intent(Intent.ACTION_VIEW, uri))
         } catch (error: Exception) { model.reportError(error.message ?: "No app is available to open this link.") }
+    }
+    private fun openEntity(id: String) {
+        val dashboard = Uri.parse(model.storage.settings.dashboard).buildUpon()
+            .appendQueryParameter("more-info-entity-id", id).build()
+        val companion = dashboard.buildUpon().scheme("homeassistant").authority("navigate").build()
+        try {
+            // Launch directly: package visibility filtering can hide installed handlers from queries.
+            // Leave server selection to Companion, which knows its configured server names.
+            startActivity(Intent(Intent.ACTION_VIEW, companion))
+        } catch (_: ActivityNotFoundException) {
+            openLink(dashboard.toString())
+        } catch (_: SecurityException) {
+            openLink(dashboard.toString())
+        }
     }
     private fun pinWidget() {
         val manager = getSystemService(AppWidgetManager::class.java)
@@ -67,7 +97,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun SearchPanel(model: SearchViewModel, visible: Boolean, dismiss: () -> Unit, open: (String) -> Unit, pin: () -> Unit) {
+private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSession: Int, dismiss: () -> Unit, open: (String) -> Unit, openEntity: (String) -> Unit, pin: () -> Unit, canRequestFocus: () -> Boolean) {
     val state by model.state.collectAsStateWithLifecycle()
     val query by model.query.collectAsStateWithLifecycle()
     val output by model.output.collectAsStateWithLifecycle()
@@ -75,11 +105,25 @@ private fun SearchPanel(model: SearchViewModel, visible: Boolean, dismiss: () ->
     var login by rememberSaveable { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(visible, login, settings, state.needsDashboard) {
-        if (visible && !login && !settings && !state.needsDashboard) { focus.requestFocus(); keyboard?.show() }
+    val view = LocalView.current
+    val window = LocalWindowInfo.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val lifecycleState by lifecycle.currentStateFlow.collectAsState()
+    var fieldCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val requestFocus = visible && !login && !settings && !state.needsDashboard &&
+        lifecycleState.isAtLeast(Lifecycle.State.RESUMED) && window.isWindowFocused
+    LaunchedEffect(requestFocus, fieldCoordinates) {
+        if (requestFocus) {
+            // A widget can be dismissed before its first frame or during IME startup.
+            withFrameNanos { }
+            if (canRequestFocus() && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                view.isAttachedToWindow && view.hasWindowFocus() && fieldCoordinates?.isAttached == true) {
+                if (focus.requestFocus()) keyboard?.show()
+            }
+        }
     }
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .35f))) {
-        Box(Modifier.fillMaxSize().clickable(onClick = dismiss))
+        Box(Modifier.fillMaxSize().semantics { contentDescription = "Dismiss search" }.clickable(onClick = dismiss))
         Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(.9f)
             .systemBarsPadding().imePadding(), shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), tonalElevation = 4.dp) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -89,7 +133,8 @@ private fun SearchPanel(model: SearchViewModel, visible: Boolean, dismiss: () ->
                     IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings") }
                     IconButton(onClick = dismiss) { Icon(Icons.Default.Close, "Close search") }
                 }
-                OutlinedTextField(query, { model.query.value = it }, Modifier.fillMaxWidth().focusRequester(focus),
+                OutlinedTextField(query, { model.query.value = it }, Modifier.fillMaxWidth().focusRequester(focus)
+                    .onGloballyPositioned { fieldCoordinates = it },
                     placeholder = { Text(state.snapshot?.config?.text("search_text")?.ifEmpty { "Type to search…" } ?: "Type to search…") },
                     leadingIcon = { Icon(Icons.Default.Search, null) },
                     trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { model.query.value = "" }) { Icon(Icons.Default.Clear, "Clear search") } },
@@ -132,7 +177,7 @@ private fun SearchPanel(model: SearchViewModel, visible: Boolean, dismiss: () ->
                                     trailingContent = { Icon(Icons.AutoMirrored.Filled.OpenInNew, "Open service") },
                                     modifier = Modifier.clickable { open(result.service.text("url")) },
                                 )
-                                is SearchResult.Entity -> EntityRow(result.id, state, model, open)
+                                is SearchResult.Entity -> EntityRow(result.id, state, model, openEntity)
                             }
                         }
                         if (query.isNotEmpty() && output.results.isEmpty() && output.actions.isEmpty() && error == null) {
@@ -149,11 +194,15 @@ private fun SearchPanel(model: SearchViewModel, visible: Boolean, dismiss: () ->
     if (state.needsDashboard && visible) {
         SettingsDialog(model, dismiss, pin, setup = true, onSaved = { settings = false; login = true })
     } else if (settings) SettingsDialog(model, { settings = false }, pin)
-    if (login && visible && !state.needsDashboard) LoginDialog(model, { login = false })
+    if (login && visible && !state.needsDashboard) key(foregroundSession) {
+        // A stop/start may happen without an intervening composition. Always replace the
+        // destroyed WebView and its authorization state when returning to the foreground.
+        LoginDialog(model, { login = false })
+    }
 }
 
 @Composable
-private fun EntityRow(id: String, state: PanelState, model: SearchViewModel, open: (String) -> Unit) {
+private fun EntityRow(id: String, state: PanelState, model: SearchViewModel, openEntity: (String) -> Unit) {
     val entity = state.snapshot?.states?.get(id) as? JsonObject ?: return
     val domain = id.substringBefore('.')
     val entityState = entity.text("state")
@@ -175,9 +224,7 @@ private fun EntityRow(id: String, state: PanelState, model: SearchViewModel, ope
                 else -> Icon(Icons.Default.ChevronRight, "Entity details")
             }
         },
-        modifier = Modifier.clickable {
-            open(Uri.parse(model.storage.settings.dashboard).buildUpon().appendQueryParameter("more-info-entity-id", id).build().toString())
-        },
+        modifier = Modifier.clickable { openEntity(id) },
     )
 }
 

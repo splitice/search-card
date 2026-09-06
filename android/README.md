@@ -2,11 +2,11 @@
 
 A native Kotlin implementation of this repository's Home Assistant search card. A resizable home-screen search bar opens a compact native panel, focuses the search field, and shows entities, local services, and configured actions. Android widgets cannot contain editable text fields; typing happens in the panel launched by the widget.
 
-The app supports Android 8.0 (API 26) and newer. No dashboard URL is built in. All installed widgets share the server and search card selected in the app.
+The app supports Android 17 (API 37) and newer. No dashboard URL is built in. All installed widgets share the server and search card selected in the app.
 
 ## Build and install
 
-Install **JDK 17**, **Android SDK Platform 36**, **Build Tools 36.0.0**, **Platform Tools**, and **Node.js 22** (Node is needed for compatibility tests, not the APK). Use an Android Studio version supporting AGP 8.13.2, or install the SDK command-line tools. Gradle 8.13, Kotlin 2.2.21, and dependency versions are pinned in the project. Initial builds require internet access to download dependencies.
+Install **JDK 17**, **Android SDK Platform 37.0**, **Build Tools 37.0.0**, **Platform Tools**, and **Node.js 22** (Node is needed for compatibility tests, not the APK). Use an Android Studio version supporting AGP 9.3.2, or install the current SDK command-line tools. AGP 9.3.2, Gradle 9.5.0, Kotlin 2.2.21, and dependency versions are pinned in the project. Initial builds require internet access to download dependencies.
 
 Open the **android/** folder as an Android Studio project and select JDK 17 as the Gradle JDK. For command-line builds, set `JAVA_HOME` and `ANDROID_HOME`, or put the SDK path in an untracked `android/local.properties`:
 
@@ -18,7 +18,7 @@ Accept the SDK licenses and install the packages if needed:
 
 ```sh
 sdkmanager --licenses
-sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'platform-tools'
+sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'platform-tools'
 cd android
 ./gradlew assembleDebug
 ./gradlew test lint verifySearchCardParity
@@ -49,12 +49,12 @@ Run `./gradlew assembleRelease`; the signed APK appears under `app/build/outputs
 ## Setup and use
 
 1. Open Search Card or tap its widget. If no dashboard URL has been saved, the app asks for it before opening sign-in. Enter an HTTPS URL with a dashboard and view path, such as `https://ha.example:8123/dashboard-phone/main`, then choose **Continue to sign in**. Invalid or blank URLs keep you on setup; cancelling closes the panel without opening login. Previously saved URLs are retained. You can change the URL later in Settings; changing it clears the current login and cache.
-2. Choose **Sign in to Home Assistant** and complete your server's normal login/MFA screen. Only this screen uses a temporary WebView. Search and controls are native Kotlin. TLS certificate errors are never bypassed. External SSO redirects are not supported in this version. Leaving the app during sign-in cancels the attempt; use **Sign in** again when you return.
+2. Choose **Sign in to Home Assistant** and complete your server's normal login/MFA screen. Only this screen uses a temporary WebView. Search and controls are native Kotlin. TLS certificate errors are never bypassed. External SSO redirects are not supported in this version. Leaving the app during sign-in cancels the current request and destroys the WebView. Returning opens a fresh authorization attempt automatically; **Cancel** returns to search. Token responses are read off the UI thread, and exchange failures are shown in the login screen.
 3. The app reads `lovelace/config`, selects the requested view, and discovers static `custom:search-card` configurations inside `cards`, `card`, and `sections`. If there is more than one card, select one. Settings → **Choose search card again** resets selection. An exact configuration match follows a card when it moves; configuration edits at the saved path sync automatically. Missing or ambiguous matches require selection again.
 4. Add **Search Card** through your launcher's Widgets menu, or use **Add home-screen widget** in Settings. Resize horizontally; tap anywhere on the bar to search.
-5. Tap a result for Home Assistant entity details. Use switches for lights/switches/input booleans and **Run** for scenes/scripts. Configured actions execute on tap. Local service links open in your browser and require access to the configured host (LAN/VPN as appropriate).
+5. Tap an entity result for details in the Home Assistant Companion app when installed, with a browser fallback if it cannot be opened. Use switches for lights/switches/input booleans and **Run** for scenes/scripts. Configured actions execute on tap. Local service links open in your browser and require access to the configured host (LAN/VPN as appropriate).
 
-Entity details use the dashboard's `more-info-entity-id` query parameter. The receiving browser/app manages its own login; the app does not transfer native API tokens to external links. On older Home Assistant frontends without this deep link, the dashboard opens and you can select the entity there.
+Entity details use the dashboard's `more-info-entity-id` query parameter with Companion's documented [`homeassistant://navigate` deep link](https://companion.home-assistant.io/docs/integrations/url-handler/). The dashboard path, query, and fragment are preserved. Companion manages its own login and asks which server to use when multiple servers are configured; select the server used by Search Card. Without a Companion handler, the original dashboard HTTPS link opens instead. The app does not transfer native API tokens to external links. On older Home Assistant frontends without entity deep-link support, the dashboard opens and you can select the entity there.
 
 Configuration refreshes when the panel opens, reconnects, or you press Refresh. No HACS resource URL or copied YAML is needed. Template-generated card configurations, arbitrary wrapper evaluation, and conditional visibility rules are not evaluated; choose a static card configuration. This is a search client, so any wrapper's dashboard visibility conditions are not access controls. Home Assistant still enforces account permissions for API operations.
 
@@ -62,7 +62,7 @@ When offline, the last successfully loaded snapshot remains searchable and shows
 
 ## Battery and account storage
 
-The widget is static, with `updatePeriodMillis=0`. There are no workers, alarms, foreground services, wake locks, or requests to exempt the app from battery optimization. Only the foreground panel connects. Its socket, heartbeat, event subscription, pending requests, and reconnect delays are cancelled when the activity stops, including when opening a local link. Cached data makes the next search available before reconnection completes.
+The widget is static, with `updatePeriodMillis=0`. There are no workers, alarms, foreground services, wake locks, or requests to exempt the app from battery optimization. Only the foreground panel connects. Its socket, heartbeat, event subscription, pending requests, and reconnect delays are cancelled immediately when the panel is dismissed and when the activity stops, including when opening a local link. Automatic focus waits for the search field to be laid out in a resumed, focused window and is suppressed while the activity is finishing. Cached data makes the next search available before reconnection completes.
 
 An active socket subscribes before taking the initial state snapshot, then reconciles buffered events by server timestamps. Subsequent updates refresh native rows and coalesce cache writes. Token refresh happens only during foreground use. The initial authorization-code exchange is cancelled if the app leaves the foreground.
 
@@ -86,26 +86,28 @@ Kotlin's regex engine is JVM `Pattern`, with ASCII case-insensitive matching for
 
 ## Verification
 
-Automated checks cover search behavior, dashboard discovery/reselection, OAuth callback validation, label metadata, snapshot reconciliation/serialization, token HTTP errors, socket events, service failures without replay, and closing a socket with pending work. Device tests check Keystore encryption, clearing the cache on logout, and the widget's no-update policy:
+Automated checks cover search behavior, dashboard discovery/reselection, OAuth callback validation, label metadata, snapshot reconciliation/serialization, token HTTP errors, token response threading and cancellation during body reads, socket events, service failures without replay, and closing a socket with pending work. Device tests check repeated immediate widget dismissal, control shutdown before closing animations, search focus and background taps, first-launch setup and login across activity stops/recreation, Keystore encryption, clearing the cache on logout, and the widget's no-update policy:
 
 ```sh
 ./gradlew connectedDebugAndroidTest
 ```
 
-GitHub Actions builds a downloadable debug APK and runs device tests on API 26 and API 36. Those tests do not log into a private Home Assistant instance or operate actual devices.
+GitHub Actions builds a downloadable debug APK and runs device tests on Android 17 (API 37). Use the `system-images;android-37.0;google_apis;x86_64` emulator image with a configured WebView provider for the login test. Those tests do not log into a private Home Assistant instance or operate actual devices.
 
-Before installing a release for daily use, perform this manual matrix on Android 8 and Android 16 (or a compatible emulator). It requires your own server/login:
+Before installing a release for daily use, perform this manual matrix on Android 17 (or an API 37 emulator). It requires your own server/login:
 
 | Scenario | Expected result |
 | --- | --- |
 | Widget placement and horizontal resize | Search bar stays usable; tap opens the native panel |
 | Keyboard, Back, rotation, light/dark mode | Input focuses, keyboard fits, Back hides keyboard then closes; query survives rotation |
+| Rapid widget open/background-dismiss cycles | No crash or late keyboard request; controls and connection stop at dismissal |
 | Process killed and reopened | Login and cached snapshot persist; controls wait for a fresh connection |
 | Multiple cards; card moved, edited, removed | Correct match syncs; missing/ambiguous selections request a choice |
 | Offline, reconnect, server restart | Cached results remain searchable; no control calls while stale |
 | Token expiry/revocation and MFA | Foreground refresh succeeds or sign-in is requested |
 | Toggle, scene, script, regex action | Exactly one call per tap; busy state prevents duplicates; failures are visible |
 | Unavailable entity | Entity remains searchable; its native control is disabled |
+| Entity tap with/without Companion installed | Companion opens the selected dashboard and entity details; without it, the browser opens the same details; multiple Companion servers prompt for selection |
 | Sign out | Cache, API token, and login WebView data are cleared |
 | Close panel/open browser/turn screen off | Socket closes; app emits no continuing network traffic |
 

@@ -14,12 +14,18 @@ import okhttp3.*
 class LoginRequired : IOException("Please sign in to Home Assistant again.")
 class HaCommandError(message: String) : IOException(message)
 
-suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
+/** Consume and close the response on OkHttp's worker, keeping body reads cancellable. */
+private suspend fun <T> Call.awaitResponse(consume: (Response) -> T): T = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }
     enqueue(object : Callback {
         override fun onFailure(call: Call, e: IOException) { if (continuation.isActive) continuation.resumeWithException(e) }
         override fun onResponse(call: Call, response: Response) {
-            continuation.resume(response) { _, value, _ -> value.close() }
+            try {
+                val result = response.use { consume(it) }
+                continuation.resume(result)
+            } catch (error: Exception) {
+                if (continuation.isActive) continuation.resumeWithException(error)
+            }
         }
     })
 }
@@ -28,7 +34,7 @@ class TokenClient(private val http: OkHttpClient) {
     suspend fun exchange(origin: String, grant: String, value: String): JsonObject {
         val body = FormBody.Builder().add("grant_type", grant).add("client_id", CLIENT_ID)
             .add(if (grant == "authorization_code") "code" else "refresh_token", value).build()
-        return http.newCall(Request.Builder().url("$origin/auth/token").post(body).build()).awaitResponse().use {
+        return http.newCall(Request.Builder().url("$origin/auth/token").post(body).build()).awaitResponse {
             if (it.code in listOf(400, 401, 403)) throw LoginRequired()
             if (!it.isSuccessful) throw IOException("Sign-in request failed (${it.code}).")
             JsonCodec.parseToJsonElement(it.body!!.string()).jsonObject
@@ -36,7 +42,7 @@ class TokenClient(private val http: OkHttpClient) {
     }
     suspend fun revoke(origin: String, refreshToken: String) {
         http.newCall(Request.Builder().url("$origin/auth/revoke")
-            .post(FormBody.Builder().add("token", refreshToken).build()).build()).awaitResponse().use {
+            .post(FormBody.Builder().add("token", refreshToken).build()).build()).awaitResponse {
                 if (!it.isSuccessful) throw IOException("Token revocation failed (${it.code}).")
             }
     }

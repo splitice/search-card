@@ -38,7 +38,9 @@ fun LoginDialog(model: SearchViewModel, close: () -> Unit) {
         }
         // Do not rely on recomposition after onStop: its frame clock may already be paused.
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) { destroyLogin(); close() }
+            // Release the WebView and request immediately, but keep the user's login intent.
+            // Returning from an interruption recreates the login with a fresh state/code.
+            if (event == Lifecycle.Event.ON_STOP) destroyLogin()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer); destroyLogin() }
@@ -71,7 +73,10 @@ fun LoginDialog(model: SearchViewModel, close: () -> Unit) {
                                             exchanged = true
                                             stopLoading()
                                             model.acceptCode(code) { success ->
-                                                if (success) close() else { error = "Could not finish sign-in. Close and try again."; exchanged = false }
+                                                if (success) close() else {
+                                                    error = model.state.value.error ?: "Could not finish sign-in. Close and try again."
+                                                    exchanged = false
+                                                }
                                             }
                                         }
                                         return true

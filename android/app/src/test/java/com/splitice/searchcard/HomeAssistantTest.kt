@@ -2,15 +2,84 @@ package com.splitice.searchcard
 
 import com.splitice.searchcard.core.*
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import okhttp3.*
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
+import okio.ForwardingSource
+import okio.buffer
 
 class HomeAssistantTest {
     private val http = OkHttpClient.Builder().retryOnConnectionFailure(false).build()
+    @Test fun `authorization response body is never read on the calling UI thread`() {
+        Executors.newSingleThreadExecutor { Thread(it, "login-test-ui") }.asCoroutineDispatcher().use { ui ->
+            MockWebServer().use { server ->
+                server.enqueue(MockResponse().setBodyDelay(100, TimeUnit.MILLISECONDS)
+                    .setBody("""{"access_token":"access","refresh_token":"refresh","expires_in":1800}"""))
+                val client = http.newBuilder().addNetworkInterceptor { chain ->
+                    val response = chain.proceed(chain.request())
+                    val body = response.body!!
+                    val checkedSource = object : ForwardingSource(body.source()) {
+                        override fun read(sink: Buffer, byteCount: Long): Long {
+                            // Android's StrictMode rejects this same socket read on its main thread.
+                            check(!Thread.currentThread().name.startsWith("login-test-ui")) { "Token body read on UI thread" }
+                            return super.read(sink, byteCount)
+                        }
+                    }.buffer()
+                    response.newBuilder().body(object : ResponseBody() {
+                        override fun contentType() = body.contentType()
+                        override fun contentLength() = body.contentLength()
+                        override fun source() = checkedSource
+                    }).build()
+                }.build()
+                runBlocking(ui) {
+                    val response = TokenClient(client).exchange(server.url("").toString().trimEnd('/'), "authorization_code", "code")
+                    assertEquals("access", response.text("access_token"))
+                    assertEquals("refresh", response.text("refresh_token"))
+                }
+                val request = server.takeRequest()
+                assertEquals("/auth/token", request.path)
+                assertTrue(request.body.readUtf8().contains("grant_type=authorization_code"))
+            }
+        }
+    }
+
+    @Test fun `cancelling sign-in cancels the HTTP call even after response headers arrive`() = runBlocking {
+        MockWebServer().use { server ->
+            val bodyReadStarted = CompletableDeferred<Unit>()
+            val startedCall = CompletableDeferred<Call>()
+            val client = http.newBuilder().eventListener(object : EventListener() {
+                override fun callStart(call: Call) { startedCall.complete(call) }
+            }).addNetworkInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                val body = response.body!!
+                val source = object : ForwardingSource(body.source()) {
+                    override fun read(sink: Buffer, byteCount: Long): Long {
+                        bodyReadStarted.complete(Unit)
+                        return super.read(sink, byteCount)
+                    }
+                }.buffer()
+                response.newBuilder().body(object : ResponseBody() {
+                    override fun contentType() = body.contentType()
+                    override fun contentLength() = body.contentLength()
+                    override fun source() = source
+                }).build()
+            }.build()
+            server.enqueue(MockResponse().setBodyDelay(1500, TimeUnit.MILLISECONDS)
+                .setBody("""{"access_token":"access","refresh_token":"refresh","expires_in":1800}"""))
+            val exchange = launch(Dispatchers.Default) {
+                TokenClient(client).exchange(server.url("").toString().trimEnd('/'), "authorization_code", "code")
+            }
+            withTimeout(2000) { bodyReadStarted.await() }
+            withTimeout(1000) { exchange.cancelAndJoin() }
+            assertTrue(startedCall.await().isCanceled(), "The response-body read must not keep running after cancellation")
+        }
+    }
     @Test fun `server-side logout errors are reported instead of silently accepted`() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(500))

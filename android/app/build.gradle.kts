@@ -2,18 +2,17 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    kotlin("android")
     kotlin("plugin.compose")
     kotlin("plugin.serialization")
 }
 android {
     namespace = "com.splitice.searchcard"
-    compileSdk = 36
-    buildToolsVersion = "36.0.0"
+    compileSdk = 37
+    buildToolsVersion = "37.0.0"
     defaultConfig {
         applicationId = "com.splitice.searchcard"
-        minSdk = 26
-        targetSdk = 36
+        minSdk = 37
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -57,4 +56,6 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2025.10.01"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 }
