@@ -1,6 +1,6 @@
 # Search Card for Android
 
-A native Kotlin implementation of this repository's Home Assistant search card. A resizable home-screen search bar opens a compact native panel, focuses the search field, and shows entities, local services, and configured actions. Android widgets cannot contain editable text fields; typing happens in the panel launched by the widget.
+A native Kotlin implementation of this repository's Home Assistant search card. A resizable home-screen search bar opens a native search field over the widget and reveals status and results downward. Android widgets cannot contain editable text fields; typing happens in the panel launched by the widget.
 
 The app supports Android 17 (API 37) and newer. No dashboard URL is built in. All installed widgets share the server and search card selected in the app.
 
@@ -51,10 +51,12 @@ Run `./gradlew assembleRelease`; the signed APK appears under `app/build/outputs
 1. Open Search Card or tap its widget. If no dashboard URL has been saved, the app asks for it before opening sign-in. Enter an HTTPS URL with a dashboard and view path, such as `https://ha.example:8123/dashboard-phone/main`, then choose **Continue to sign in**. Invalid or blank URLs keep you on setup; cancelling closes the panel without opening login. Previously saved URLs are retained. You can change the URL later in Settings; changing it clears the current login and cache.
 2. Choose **Sign in to Home Assistant** and complete your server's normal login/MFA screen. Only this screen uses a temporary WebView. Search and controls are native Kotlin. TLS certificate errors are never bypassed. External SSO redirects are not supported in this version. Leaving the app during sign-in cancels the current request and destroys the WebView. Returning opens a fresh authorization attempt automatically; **Cancel** returns to search. Token responses are read off the UI thread, and exchange failures are shown in the login screen.
 3. The app reads `lovelace/config`, selects the requested view, and discovers static `custom:search-card` configurations inside `cards`, `card`, and `sections`. If there is more than one card, select one. Settings → **Choose search card again** resets selection. An exact configuration match follows a card when it moves; configuration edits at the saved path sync automatically. Missing or ambiguous matches require selection again.
-4. Add **Search Card** through your launcher's Widgets menu, or use **Add home-screen widget** in Settings. Resize horizontally; tap anywhere on the bar to search.
+4. Add **Search Card** through your launcher's Widgets menu, or use **Add home-screen widget** in Settings. Resize horizontally; tap anywhere on the bar to search. The opened field matches the widget's position and width when space permits. Connection status and results reveal below it over 200 ms; **Search options** below the field contains Refresh, Settings, and Close. Narrow widgets put entity controls below their labels.
 5. Tap an entity result for details in the Home Assistant Companion app when installed, with a browser fallback if it cannot be opened. Use switches for lights/switches/input booleans and **Run** for scenes/scripts. Configured actions execute on tap. Local service links open in your browser and require access to the configured host (LAN/VPN as appropriate).
 
 Entity details use the dashboard's `more-info-entity-id` query parameter with Companion's documented [`homeassistant://navigate` deep link](https://companion.home-assistant.io/docs/integrations/url-handler/). The dashboard path, query, and fragment are preserved. Companion manages its own login and asks which server to use when multiple servers are configured; select the server used by Search Card. Without a Companion handler, the original dashboard HTTPS link opens instead. The app does not transfer native API tokens to external links. On older Home Assistant frontends without entity deep-link support, the dashboard opens and you can select the entity there.
+
+Widget placement uses the launcher's click bounds and the current keyboard/system-bar insets. The field moves upward only when needed to leave space for status and at least one 72 dp result row, with an 8 dp gap above the keyboard. Status, errors, and results share a scrollable area when the window is very short. The reveal respects Android's animation-duration setting; keyboard movement follows the keyboard's own animation. Large fonts can increase the field height to keep text readable. Exact alignment requires accurate bounds from the launcher. Opening the app icon, missing/invalid bounds, or stale bounds after a window change uses the ordinary unanchored panel. No overlay permission or background position tracking is used.
 
 Configuration refreshes when the panel opens, reconnects, or you press Refresh. No HACS resource URL or copied YAML is needed. Template-generated card configurations, arbitrary wrapper evaluation, and conditional visibility rules are not evaluated; choose a static card configuration. This is a search client, so any wrapper's dashboard visibility conditions are not access controls. Home Assistant still enforces account permissions for API operations.
 
@@ -86,7 +88,7 @@ Kotlin's regex engine is JVM `Pattern`, with ASCII case-insensitive matching for
 
 ## Verification
 
-Automated checks cover search behavior, dashboard discovery/reselection, OAuth callback validation, label metadata, snapshot reconciliation/serialization, token HTTP errors, token response threading and cancellation during body reads, socket events, service failures without replay, and closing a socket with pending work. Device tests check repeated immediate widget dismissal, control shutdown before closing animations, search focus and background taps, first-launch setup and login across activity stops/recreation, Keystore encryption, clearing the cache on logout, and the widget's no-update policy:
+Automated checks cover search behavior, dashboard discovery/reselection, OAuth callback validation, label metadata, snapshot reconciliation/serialization, token HTTP errors, token response threading and cancellation during body reads, socket events, service failures without replay, and closing a socket with pending work. Placement tests cover exact alignment, minimum upward movement, keyboard animation, narrow widgets, large text, cutouts, small windows, and invalid/stale bounds. Device tests check bounds delivered through widget PendingIntents, switching widget instances, query preservation across recreation, missing-bounds fallback, repeated immediate widget dismissal, control shutdown before closing animations, search focus and background taps, first-launch setup and login across activity stops/recreation, Keystore encryption, clearing the cache on logout, and the widget's no-update policy:
 
 ```sh
 ./gradlew connectedDebugAndroidTest
@@ -99,6 +101,9 @@ Before installing a release for daily use, perform this manual matrix on Android
 | Scenario | Expected result |
 | --- | --- |
 | Widget placement and horizontal resize | Search bar stays usable; tap opens the native panel |
+| Widgets near the top, middle, and bottom; multiple instances | Field matches the tapped widget's bounds when there is room; low widgets shift only as far upward as needed |
+| Minimum widget width, large fonts, cutouts, and short windows | Labels and controls remain usable; status/results scroll without overlapping system bars or keyboard |
+| Different keyboard heights; hardware keyboard; animations disabled | Placement follows actual insets; the field stays fixed when possible; disabled animations reveal immediately |
 | Keyboard, Back, rotation, light/dark mode | Input focuses, keyboard fits, Back hides keyboard then closes; query survives rotation |
 | Rapid widget open/background-dismiss cycles | No crash or late keyboard request; controls and connection stop at dismissal |
 | Process killed and reopened | Login and cached snapshot persist; controls wait for a fresh connection |

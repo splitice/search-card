@@ -23,6 +23,8 @@ class PanelLifecycleTest {
     @Test fun widgetCanBeDismissedImmediatelyAndReopenedRepeatedly() = withStoredAccount { context ->
         repeat(12) {
             val intent = Intent(context, MainActivity::class.java)
+                .setAction(SearchWidget.ACTION_OPEN_WIDGET)
+                .apply { sourceBounds = android.graphics.Rect(16, 100, 300, 148) }
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             ActivityScenario.launch<MainActivity>(intent).use { scenario ->
                 // Avoid Compose's idle synchronization: dismissal must race the initial frame.

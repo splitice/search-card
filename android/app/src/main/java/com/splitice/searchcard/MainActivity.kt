@@ -10,7 +10,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -48,13 +47,52 @@ class MainActivity : ComponentActivity() {
     private val model: SearchViewModel by viewModels()
     private var panelVisible by mutableStateOf(false)
     private var foregroundSession by mutableIntStateOf(0)
+    private var widgetAnchor by mutableStateOf<WidgetAnchor?>(null)
+    private var launchSequence by mutableIntStateOf(0)
+
+    private fun currentWindow(): PanelBounds = windowManager.currentWindowMetrics.bounds.toPanelBounds()
+
+    private fun readWidgetLaunch(intent: Intent) {
+        widgetAnchor = if (intent.action == SearchWidget.ACTION_OPEN_WIDGET)
+            intent.sourceBounds?.let { WidgetAnchor(it.toPanelBounds(), currentWindow()) } else null
+        if (intent.action == SearchWidget.ACTION_OPEN_WIDGET) {
+            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
+            overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
+        } else {
+            clearOverrideActivityTransition(OVERRIDE_TRANSITION_OPEN)
+            clearOverrideActivityTransition(OVERRIDE_TRANSITION_CLOSE)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        readWidgetLaunch(intent)
+        launchSequence++
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        widgetAnchor?.let {
+            outState.putIntArray("widgetBounds", it.bounds.toArray())
+            outState.putIntArray("widgetWindow", it.window.toArray())
+        }
+        outState.putInt("widgetLaunchSequence", launchSequence)
+        super.onSaveInstanceState(outState)
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        readWidgetLaunch(intent)
+        if (savedInstanceState != null) {
+            val bounds = savedInstanceState.getIntArray("widgetBounds")?.toPanelBounds()
+            val window = savedInstanceState.getIntArray("widgetWindow")?.toPanelBounds()
+            widgetAnchor = if (bounds != null && window == currentWindow()) WidgetAnchor(bounds, window) else null
+            launchSequence = savedInstanceState.getInt("widgetLaunchSequence")
+        }
         setContent {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme(primary = Color(0xFF80D2FF))
                 else lightColorScheme(primary = Color(0xFF00658D))) {
-                SearchPanel(model, panelVisible, foregroundSession, ::finish, ::openLink, ::openEntity, ::pinWidget,
+                SearchPanel(model, panelVisible, foregroundSession, widgetAnchor, ::currentWindow, launchSequence, ::finish, ::openLink, ::openEntity, ::pinWidget,
                     canRequestFocus = { !isFinishing && !isDestroyed })
             }
         }
@@ -97,7 +135,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSession: Int, dismiss: () -> Unit, open: (String) -> Unit, openEntity: (String) -> Unit, pin: () -> Unit, canRequestFocus: () -> Boolean) {
+private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSession: Int, widgetAnchor: WidgetAnchor?, currentWindow: () -> PanelBounds, launchSequence: Int, dismiss: () -> Unit, open: (String) -> Unit, openEntity: (String) -> Unit, pin: () -> Unit, canRequestFocus: () -> Boolean) {
     val state by model.state.collectAsStateWithLifecycle()
     val query by model.query.collectAsStateWithLifecycle()
     val output by model.output.collectAsStateWithLifecycle()
@@ -122,75 +160,50 @@ private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSess
             }
         }
     }
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .35f))) {
-        Box(Modifier.fillMaxSize().semantics { contentDescription = "Dismiss search" }.clickable(onClick = dismiss))
-        Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(.9f)
-            .systemBarsPadding().imePadding(), shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), tonalElevation = 4.dp) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Search Card", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    IconButton(onClick = model::refresh) { Icon(Icons.Default.Refresh, "Refresh connection and configuration") }
-                    IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings") }
-                    IconButton(onClick = dismiss) { Icon(Icons.Default.Close, "Close search") }
+    val cached = state.snapshot
+    val status = if (!state.connected && cached != null) {
+        val minutes = ((System.currentTimeMillis() - cached.savedAt).coerceAtLeast(0) / 60_000)
+        "${state.status} · saved ${if (minutes == 0L) "just now" else "$minutes min ago"}"
+    } else state.status
+    val widgetStatus = if (output.results.isNotEmpty() && state.choices.isEmpty())
+        "$status\nShowing ${output.results.size} of ${output.total} results" else status
+    val fieldModifier = Modifier.focusRequester(focus).onGloballyPositioned { fieldCoordinates = it }
+    val signIn = { keyboard?.hide(); login = true }
+    WidgetPanelHost(widgetAnchor, currentWindow, launchSequence, visible, widgetStatus, dismiss,
+        field = { modifier ->
+            WidgetSearchField(query, { model.query.value = it }, state.snapshot?.config?.text("search_text").orEmpty(),
+                modifier.then(fieldModifier))
+        },
+        body = { modifier, scrollStatus ->
+            if (scrollStatus) {
+                PanelResults(state, output, query, model, open, openEntity, signIn, modifier, showCount = false) {
+                    WidgetStatus(widgetStatus, model::refresh, { settings = true }, dismiss)
                 }
-                OutlinedTextField(query, { model.query.value = it }, Modifier.fillMaxWidth().focusRequester(focus)
-                    .onGloballyPositioned { fieldCoordinates = it },
-                    placeholder = { Text(state.snapshot?.config?.text("search_text")?.ifEmpty { "Type to search…" } ?: "Type to search…") },
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { model.query.value = "" }) { Icon(Icons.Default.Clear, "Clear search") } },
-                    singleLine = true, shape = RoundedCornerShape(20.dp))
-                val cached = state.snapshot
-                val status = if (!state.connected && cached != null) {
-                    val minutes = ((System.currentTimeMillis() - cached.savedAt).coerceAtLeast(0) / 60_000)
-                    "${state.status} · saved ${if (minutes == 0L) "just now" else "$minutes min ago"}"
-                } else state.status
-                Text(status, Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
-                if (state.needsLogin) Button(onClick = { keyboard?.hide(); login = true }, Modifier.fillMaxWidth()) { Text("Sign in to Home Assistant") }
-                val error = output.error ?: state.error
-                if (error != null) Text(error, Modifier.padding(bottom = 8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                if (state.choices.isNotEmpty()) {
-                    Text("Choose the card to sync", style = MaterialTheme.typography.titleSmall)
-                    LazyColumn {
-                        items(state.choices) { card -> TextButton(onClick = { model.choose(card) }) { Text(card.title) } }
+            } else Column(modifier) {
+                WidgetStatus(widgetStatus, model::refresh, { settings = true }, dismiss)
+                PanelResults(state, output, query, model, open, openEntity, signIn, Modifier.weight(1f), showCount = false)
+            }
+        },
+        fallback = {
+            Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(.9f)
+                .systemBarsPadding().imePadding(), shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), tonalElevation = 4.dp) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Search Card", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        IconButton(onClick = model::refresh) { Icon(Icons.Default.Refresh, "Refresh connection and configuration") }
+                        IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Settings") }
+                        IconButton(onClick = dismiss) { Icon(Icons.Default.Close, "Close search") }
                     }
-                } else {
-                    if (output.results.isNotEmpty()) Text("Showing ${output.results.size} of ${output.total} results", style = MaterialTheme.typography.labelSmall)
-                    LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) {
-                        items(output.actions.withIndex().toList(), key = { "action:${it.index}" }) { indexed ->
-                            val action = indexed.value
-                            val key = "action:${action.service}:${action.data}"
-                            ListItem(
-                                headlineContent = { Text(action.name) },
-                                supportingContent = { Text(if (key in state.busyActions) "Sending…" else "Run action") },
-                                leadingContent = { Icon(iconFor(action.icon, action.service.substringBefore('.')), null) },
-                                modifier = Modifier.clickable(enabled = state.connected && key !in state.busyActions) {
-                                    model.callService(key, action.service, action.data)
-                                },
-                            )
-                        }
-                        items(output.results.withIndex().toList(), key = { "result:${it.index}" }) { indexed ->
-                            when (val result = indexed.value) {
-                                is SearchResult.LocalService -> ListItem(
-                                    headlineContent = { Text(result.service.text("name")) },
-                                    supportingContent = { Text(result.service.text("category").ifEmpty { result.service.text("url") }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                    leadingContent = { Icon(iconFor(result.service.text("icon"), "local"), null) },
-                                    trailingContent = { Icon(Icons.AutoMirrored.Filled.OpenInNew, "Open service") },
-                                    modifier = Modifier.clickable { open(result.service.text("url")) },
-                                )
-                                is SearchResult.Entity -> EntityRow(result.id, state, model, openEntity)
-                            }
-                        }
-                        if (query.isNotEmpty() && output.results.isEmpty() && output.actions.isEmpty() && error == null) {
-                            item { Text("No matching entities or services", Modifier.padding(16.dp)) }
-                        }
-                        if (query.isEmpty()) item {
-                            Text("Search entities, local services, or a configured action.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                    OutlinedTextField(query, { model.query.value = it }, Modifier.fillMaxWidth().then(fieldModifier),
+                        placeholder = { Text(state.snapshot?.config?.text("search_text")?.ifEmpty { "Type to search…" } ?: "Type to search…") },
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { model.query.value = "" }) { Icon(Icons.Default.Clear, "Clear search") } },
+                        singleLine = true, shape = RoundedCornerShape(20.dp))
+                    Text(status, Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
+                    PanelResults(state, output, query, model, open, openEntity, signIn, Modifier.weight(1f))
                 }
             }
-        }
-    }
+        })
     if (state.needsDashboard && visible) {
         SettingsDialog(model, dismiss, pin, setup = true, onSaved = { settings = false; login = true })
     } else if (settings) SettingsDialog(model, { settings = false }, pin)
@@ -202,30 +215,98 @@ private fun SearchPanel(model: SearchViewModel, visible: Boolean, foregroundSess
 }
 
 @Composable
-private fun EntityRow(id: String, state: PanelState, model: SearchViewModel, openEntity: (String) -> Unit) {
+private fun PanelResults(
+    state: PanelState, output: SearchOutput, query: String, model: SearchViewModel,
+    open: (String) -> Unit, openEntity: (String) -> Unit, signIn: () -> Unit, modifier: Modifier,
+    showCount: Boolean = true,
+    header: (@Composable () -> Unit)? = null,
+) {
+    val error = output.error ?: state.error
+    // Status, errors, sign-in, and choices must remain reachable even in a very short window.
+    BoxWithConstraints(modifier) {
+        val compact = maxWidth < 240.dp
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) {
+            if (header != null) item(key = "status") { header() }
+            if (state.needsLogin) item(key = "login") {
+                Button(onClick = signIn, Modifier.fillMaxWidth()) { Text("Sign in to Home Assistant") }
+            }
+            if (error != null) item(key = "error") {
+                Text(error, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            if (state.choices.isNotEmpty()) {
+                item { Text("Choose the card to sync", style = MaterialTheme.typography.titleSmall) }
+                items(state.choices) { card -> TextButton(onClick = { model.choose(card) }) { Text(card.title) } }
+            } else {
+                if (output.results.isNotEmpty() && showCount) item {
+                    Text("Showing ${output.results.size} of ${output.total} results", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
+                }
+                items(output.actions.withIndex().toList(), key = { "action:${it.index}" }) { indexed ->
+                    val action = indexed.value
+                    val key = "action:${action.service}:${action.data}"
+                    ListItem(
+                        headlineContent = { Text(action.name) },
+                        supportingContent = { Text(if (key in state.busyActions) "Sending…" else "Run action") },
+                        leadingContent = if (compact) null else ({ Icon(iconFor(action.icon, action.service.substringBefore('.')), null) }),
+                        modifier = Modifier.clickable(enabled = state.connected && key !in state.busyActions) {
+                            model.callService(key, action.service, action.data)
+                        },
+                    )
+                }
+                items(output.results.withIndex().toList(), key = { "result:${it.index}" }) { indexed ->
+                    when (val result = indexed.value) {
+                        is SearchResult.LocalService -> ListItem(
+                            headlineContent = { Text(result.service.text("name")) },
+                            supportingContent = { Text(result.service.text("category").ifEmpty { result.service.text("url") }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            leadingContent = if (compact) null else ({ Icon(iconFor(result.service.text("icon"), "local"), null) }),
+                            trailingContent = if (compact) null else ({ Icon(Icons.AutoMirrored.Filled.OpenInNew, "Open service") }),
+                            modifier = Modifier.clickable { open(result.service.text("url")) },
+                        )
+                        is SearchResult.Entity -> EntityRow(result.id, state, model, openEntity, compact)
+                    }
+                }
+                if (query.isNotEmpty() && output.results.isEmpty() && output.actions.isEmpty() && error == null) {
+                    item { Text("No matching entities or services", Modifier.padding(16.dp)) }
+                }
+                if (query.isEmpty()) item {
+                    Text("Search entities, local services, or a configured action.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EntityRow(id: String, state: PanelState, model: SearchViewModel, openEntity: (String) -> Unit, compact: Boolean) {
     val entity = state.snapshot?.states?.get(id) as? JsonObject ?: return
     val domain = id.substringBefore('.')
     val entityState = entity.text("state")
     val entityName = entity.obj("attributes").text("friendly_name", id)
     val key = "entity:$id"
     val enabled = state.connected && entityState !in listOf("unavailable", "unknown") && key !in state.busyActions
-    ListItem(
-        headlineContent = { Text(entityName) },
-        supportingContent = { Text("$entityState${entity.obj("attributes").text("unit_of_measurement").let { if (it.isEmpty()) "" else " $it" }}", maxLines = 1) },
-        leadingContent = { Icon(iconFor(entity.obj("attributes").text("icon"), domain), null) },
-        trailingContent = {
-            when (domain) {
-                "light", "switch", "input_boolean" -> Switch(entityState == "on", { on ->
-                    model.callService(key, "$domain.${if (on) "turn_on" else "turn_off"}", buildJsonObject { put("entity_id", id) })
-                }, enabled = enabled, modifier = Modifier.semantics { contentDescription = "Toggle $entityName" })
-                "scene", "script" -> TextButton(onClick = {
-                    model.callService(key, "$domain.turn_on", buildJsonObject { put("entity_id", id) })
-                }, enabled = enabled) { Text(if (key in state.busyActions) "Sending…" else "Run") }
-                else -> Icon(Icons.Default.ChevronRight, "Entity details")
-            }
-        },
-        modifier = Modifier.clickable { openEntity(id) },
-    )
+    val controls: @Composable () -> Unit = {
+        when (domain) {
+            "light", "switch", "input_boolean" -> Switch(entityState == "on", { on ->
+                model.callService(key, "$domain.${if (on) "turn_on" else "turn_off"}", buildJsonObject { put("entity_id", id) })
+            }, enabled = enabled, modifier = Modifier.semantics { contentDescription = "Toggle $entityName" })
+            "scene", "script" -> TextButton(onClick = {
+                model.callService(key, "$domain.turn_on", buildJsonObject { put("entity_id", id) })
+            }, enabled = enabled) { Text(if (key in state.busyActions) "Sending…" else "Run") }
+            else -> Icon(Icons.Default.ChevronRight, "Entity details")
+        }
+    }
+    Column(Modifier.clickable { openEntity(id) }) {
+        ListItem(
+            headlineContent = { Text(entityName) },
+            supportingContent = { Text("$entityState${entity.obj("attributes").text("unit_of_measurement").let { if (it.isEmpty()) "" else " $it" }}", maxLines = 1) },
+            leadingContent = if (compact) null else ({ Icon(iconFor(entity.obj("attributes").text("icon"), domain), null) }),
+            trailingContent = if (compact) null else controls,
+        )
+        if (compact) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(iconFor(entity.obj("attributes").text("icon"), domain), null)
+            Spacer(Modifier.weight(1f))
+            controls()
+        }
+    }
 }
 
 private fun iconFor(mdi: String, domain: String): ImageVector = when (mdi.removePrefix("mdi:")) {
@@ -275,3 +356,7 @@ private fun SettingsDialog(
     }, confirmButton = { TextButton(onClick = { try { model.setDashboard(address); onSaved() } catch (e: Exception) { error = e.message } }) { Text(if (setup) "Continue to sign in" else "Save") } },
         dismissButton = { TextButton(onClick = close) { Text("Cancel") } })
 }
+
+private fun android.graphics.Rect.toPanelBounds() = PanelBounds(left, top, right, bottom)
+private fun PanelBounds.toArray() = intArrayOf(left, top, right, bottom)
+private fun IntArray.toPanelBounds(): PanelBounds? = if (size == 4) PanelBounds(this[0], this[1], this[2], this[3]) else null
