@@ -104,13 +104,13 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 catch (_: HaCommandError) { null }
             }
             val dashboard = async { session.request("lovelace/config", buildJsonObject { put("url_path", address.dashboard) }).jsonObject }
-            val metadata = async {
-                try {
-                    labelSets(session.request("config/label_registry/list").jsonArray,
-                        session.request("config/entity_registry/list_for_display").jsonObject)
-                } catch (error: CancellationException) { throw error }
-                catch (_: HaCommandError) { null }
-            }
+            suspend fun optionalMetadata(type: String): JsonElement? = try {
+                session.request(type)
+            } catch (error: CancellationException) { throw error }
+            catch (_: HaCommandError) { null }
+            val registry = async { optionalMetadata("config/entity_registry/list_for_display") as? JsonObject }
+            val labelsMetadata = async { optionalMetadata("config/label_registry/list") as? JsonArray }
+            val devicesMetadata = async { optionalMetadata("config/device_registry/list") as? JsonArray }
             val cards = discoverCards(dashboard.await(), address.view)
             val chosen = selectCard(cards, storage.settings.selected) ?: run {
                 val deferred = CompletableDeferred<CardCandidate>()
@@ -119,12 +119,16 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 try { deferred.await() } finally { selection = null }
             }
             withContext(Dispatchers.IO) { storage.settings = storage.settings.copy(selected = chosen.selection) }
-            val labels = metadata.await()
+            val entries = registry.await()
+            val labelRegistry = labelsMetadata.await()
+            val devices = devicesMetadata.await()
+            val labels = if (entries != null && labelRegistry != null) labelSets(labelRegistry, entries) else null
+            val deviceNames = if (entries != null && devices != null) entityDeviceNames(entries, devices) else emptyMap()
             val navigation = panels.await()
             val fetched = states.await().map { it.jsonObject }.associateBy { it.text("entity_id") }
             var snapshot = Snapshot(chosen.config, JsonObject(fetched), services.await(),
                 labels?.first ?: emptySet(), labels?.second ?: emptySet(), System.currentTimeMillis(),
-                panels = navigation ?: JsonObject(emptyMap()))
+                panels = navigation ?: JsonObject(emptyMap()), entityDeviceNames = deviceNames)
             // Events received since subscribing are applied after the snapshot, using timestamps.
             while (true) {
                 val event = session.events.tryReceive().getOrNull() ?: break
@@ -134,6 +138,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             state.update { it.copy(snapshot = snapshot, connected = true, choices = emptyList(),
                 status = "Connected", error = listOfNotNull(
                     if (labels == null) "Label metadata unavailable; priority/hidden labels could not be applied." else null,
+                    if (entries == null || devices == null) "Device names unavailable; searching entity IDs and names only." else null,
                     if (navigation == null) "Navigation pages unavailable; refresh to try again." else null,
                 ).joinToString("\n").ifEmpty { null }) }
             val cacheWriter = launch {

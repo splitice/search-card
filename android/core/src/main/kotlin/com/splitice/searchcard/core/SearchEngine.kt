@@ -14,10 +14,15 @@ class SearchEngine {
     """).jsonObject
 
     fun search(query: String, snapshot: Snapshot): SearchOutput {
-        if (query.isEmpty()) return SearchOutput()
+        // Match ECMAScript whitespace, including non-breaking spaces and BOM.
+        val terms = query.lowercase(Locale.ROOT).split(Regex("[\\s\\p{Z}\\uFEFF]+")).filter { it.isNotEmpty() }
+        if (terms.isEmpty()) return SearchOutput()
         return try {
             val config = snapshot.config
-            val queryRegex = compile(query, true)
+            fun matchesQuery(fields: List<String>): Boolean {
+                val normalized = fields.map { it.lowercase(Locale.ROOT) }
+                return terms.all { term -> normalized.any { term in it } }
+            }
             val includes = patterns(config["included_regex"], listOf(".")).map { compile(it, true) }
             val excludes = patterns(config["excluded_regex"], emptyList()).map { compile(it, true) }
             fun matches(fields: List<String>, regexes: List<Pattern>) =
@@ -26,7 +31,7 @@ class SearchEngine {
             val entities = snapshot.states.entries.filter { (id, value) ->
                 val fields = listOfNotNull(id, (value as? JsonObject)?.obj("attributes")
                     ?.get("friendly_name")?.let { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content })
-                matches(fields, listOf(queryRegex)) && matches(fields, includes) &&
+                matchesQuery(fields + listOfNotNull(snapshot.entityDeviceNames[id])) && matches(fields, includes) &&
                     !matches(fields, excludes) && id !in snapshot.hidden
             }.map { SearchResult.Entity(it.key) }.sortedWith { a, b ->
                 collator.compare(a.id, b.id)
@@ -34,10 +39,10 @@ class SearchEngine {
             val local = config.obj("local_services").array("services")
                 .mapNotNull { it as? JsonObject }.filter { service ->
                     service.text("name").isNotEmpty() && service.text("url").isNotEmpty() &&
-                        matches(listOf(service.text("name"), service.text("category")) +
-                            patterns(service["aliases"], emptyList()), listOf(queryRegex))
+                        matchesQuery(listOf(service.text("name"), service.text("category")) +
+                            patterns(service["aliases"], emptyList()))
                 }.map { SearchResult.LocalService(it) }
-            val navigation = navigationPages(snapshot.panels).filter { matches(it.searchTerms, listOf(queryRegex)) }
+            val navigation = navigationPages(snapshot.panels).filter { matchesQuery(it.searchTerms) }
                 .map { SearchResult.Navigation(it) }
             val results = (local + navigation + entities).sortedBy {
                 when (it) {

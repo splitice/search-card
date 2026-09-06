@@ -84,7 +84,8 @@
       "query": ""
     },
     {
-      "name": "default ordering"
+      "name": "default ordering",
+      "query": "e"
     },
     {
       "name": "friendly name case insensitive",
@@ -92,7 +93,7 @@
     },
     {
       "name": "entity id",
-      "query": "^light\\."
+      "query": "light."
     },
     {
       "name": "local aliases",
@@ -115,7 +116,7 @@
     },
     {
       "name": "priority before services",
-      "query": ".",
+      "query": "e",
       "priority": [
         "light.attic",
         "switch.coffee"
@@ -175,8 +176,9 @@
       }
     },
     {
-      "name": "invalid query",
-      "query": "["
+      "name": "unmatched literal bracket",
+      "query": "[",
+      "expected_types": []
     },
     {
       "name": "invalid filter",
@@ -395,7 +397,7 @@
     },
     {
       "name": "navigation pages and existing result ordering",
-      "query": ".",
+      "query": "e",
       "panels": {
         "energy": {
           "title": "energy",
@@ -495,7 +497,7 @@
     },
     {
       "name": "navigation is not truncated by legacy limit",
-      "query": ".",
+      "query": "e",
       "panels": {
         "energy": {
           "title": "energy",
@@ -539,7 +541,7 @@
     },
     {
       "name": "hidden and invalid navigation excluded",
-      "query": "Hidden|Internal|External|Duplicate",
+      "query": "Hidden",
       "panels": {
         "hidden": {
           "title": "Hidden dashboard",
@@ -580,7 +582,7 @@
       "config": {}
     },
     {
-      "name": "invalid regex with navigation",
+      "name": "literal bracket with navigation",
       "query": "[",
       "panels": {
         "energy": {
@@ -589,7 +591,8 @@
           "component_name": "energy"
         }
       },
-      "config": {}
+      "config": {},
+      "expected_types": []
     },
     {
       "name": "all 250 matches remain available",
@@ -603,6 +606,829 @@
         "max_results": 10
       },
       "generated_entities": 250
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "reported examples",
+      "query": "Rumpus temp",
+      "expected_entities": [
+        "sensor.average",
+        "sensor.opaque_1"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "reverse terms",
+      "query": "temp rumpus",
+      "expected_entities": [
+        "sensor.average",
+        "sensor.opaque_1"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "case and whitespace",
+      "query": "  RUMPUS\t TeMp  ",
+      "expected_entities": [
+        "sensor.average",
+        "sensor.opaque_1"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "partial terms",
+      "query": "rump tem",
+      "expected_entities": [
+        "sensor.average",
+        "sensor.opaque_1"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "missing term",
+      "query": "rumpus temp missing",
+      "expected_entities": []
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "blank query",
+      "query": " \t ",
+      "expected_entities": []
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "literal punctuation",
+      "query": "[C]",
+      "expected_entities": [
+        "sensor.literal"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "literal regex",
+      "query": "^sensor\\.",
+      "expected_entities": []
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {},
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "device metadata missing",
+      "query": "rumpus temp",
+      "expected_entities": [
+        "sensor.average"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "hidden word match",
+      "hidden": [
+        "sensor.average"
+      ],
+      "query": "rumpus temp",
+      "expected_entities": [
+        "sensor.opaque_1"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "priority word match",
+      "priority": [
+        "sensor.opaque_1"
+      ],
+      "query": "rumpus temp",
+      "expected_entities": [
+        "sensor.opaque_1",
+        "sensor.average"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "included_regex": "Rumpus"
+      },
+      "name": "device names do not extend includes",
+      "query": "rumpus temp",
+      "expected_entities": [
+        "sensor.average"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "excluded_regex": "Rumpus"
+      },
+      "name": "device names do not extend excludes",
+      "query": "rumpus temp",
+      "expected_entities": [
+        "sensor.opaque_1"
+      ]
+    },
+    {
+      "states": {},
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {
+        "rumpus": {
+          "title": "Rumpus",
+          "url_path": "temperature",
+          "component_name": "lovelace"
+        }
+      },
+      "config": {
+        "local_services": {
+          "services": [
+            {
+              "name": "Rumpus",
+              "category": "temperature",
+              "url": "https://example.test"
+            }
+          ]
+        }
+      },
+      "name": "words span service and navigation fields",
+      "query": "rumpus temp",
+      "expected_types": [
+        "local_service",
+        "navigation"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "Unicode whitespace",
+      "query": "\ufeffRumpus\u00a0temp\u2028",
+      "expected_entities": [
+        "sensor.average",
+        "sensor.opaque_1"
+      ]
+    },
+    {
+      "states": {
+        "sensor.opaque_1": {
+          "entity_id": "sensor.opaque_1",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "temperature"
+          }
+        },
+        "sensor.average": {
+          "entity_id": "sensor.average",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Average Temperature"
+          }
+        },
+        "sensor.other": {
+          "entity_id": "sensor.other",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Kitchen Temperature"
+          }
+        },
+        "sensor.motion": {
+          "entity_id": "sensor.motion",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Rumpus Motion"
+          }
+        },
+        "sensor.literal": {
+          "entity_id": "sensor.literal",
+          "state": "20",
+          "attributes": {
+            "friendly_name": "Temperature [C]"
+          }
+        }
+      },
+      "entity_device_names": {
+        "sensor.opaque_1": "Rumpus Motion"
+      },
+      "panels": {},
+      "config": {
+        "local_services": {
+          "services": []
+        }
+      },
+      "name": "Unicode blank query",
+      "query": "\ufeff\u00a0\u2028",
+      "expected_entities": []
     }
   ]
 }

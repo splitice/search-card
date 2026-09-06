@@ -55,6 +55,7 @@ const reference = fixtures.cases.map(fixture => {
   card.hass = { states: input.states, services: input.services, panels: input.panels ?? {} };
   card._searchPriorityEntityIds = new Set(input.priority ?? []);
   card._searchHiddenEntityIds = new Set(input.hidden ?? []);
+  card._entityDeviceNames = new Map(Object.entries(input.entity_device_names ?? {}));
   card._performSearch(input.query);
   const actions = card._activeActions.map(([action, matches]) => {
     const row = card._createActionRow(action, matches);
@@ -63,6 +64,11 @@ const reference = fixtures.cases.map(fixture => {
   navigationRequests.length = 0;
   navigationEvents.length = 0;
   const results = card._results;
+  if (input.expected_entities) {
+    assert.deepEqual(Array.from(results.filter(result => result.type === 'entity'), result => result.entity_id),
+      input.expected_entities, fixture.name);
+  }
+  if (input.expected_types) assert.deepEqual(Array.from(results, result => result.type), input.expected_types, fixture.name);
   if (input.generated_entities) {
     assert.equal(results.length, input.generated_entities, 'Never truncate matches at the legacy limit');
     assert.equal(results.at(-1).entity_id, 'sensor.bulk_249');

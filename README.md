@@ -79,6 +79,12 @@ Results appear in a scrollable dropdown over the existing dashboard; typing does
 
 The dropdown matches the search field's width and fits the visible viewport, including mobile keyboard changes. When needed, the dashboard scrolls just enough to leave space below the field. If it cannot scroll further, the dropdown can open above the field. It uses the browser's [Popover API](https://developer.mozilla.org/en-US/docs/Web/API/Popover_API/Using) to remain above dashboard containers that clip their content. Use a current browser or Companion WebView. Click outside or press Escape to dismiss, and click the field to reopen. Arrow Down moves focus into the results; entity and link rows support Enter/Space.
 
+### Search matching
+
+Search uses case-insensitive literal words in any order. Every word must occur in the entity ID, friendly name, or associated device name; partial words work across fields. For example, `Rumpus temp` finds both a temperature entity on the “Rumpus Motion” device and “Rumpus Average Temperature”. Device names prefer user overrides and require registry access; IDs and friendly names remain searchable if metadata is unavailable. Blank queries return no results.
+
+Local services and navigation pages use the same word matching across their existing search fields. Typed punctuation is literal, so typed regex expressions no longer act as patterns. Configured filters and action triggers still use regex.
+
 ### Regex Filtering
 
 The card filters Home Assistant entity results with `included_regex` first and then `excluded_regex`.

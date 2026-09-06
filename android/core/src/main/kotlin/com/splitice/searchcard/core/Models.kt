@@ -18,6 +18,7 @@ data class Snapshot(
     val hidden: Set<String> = emptySet(),
     val savedAt: Long = 0,
     val panels: JsonObject = JsonObject(emptyMap()),
+    val entityDeviceNames: Map<String, String> = emptyMap(),
 )
 
 sealed interface SearchResult {
@@ -78,4 +79,16 @@ fun applyStateEvent(states: JsonObject, event: JsonObject): JsonObject {
     if (nextTime.isNotEmpty() && previousTime.isNotEmpty() &&
         java.time.Instant.parse(nextTime).isBefore(java.time.Instant.parse(previousTime))) return states
     return JsonObject(states.toMutableMap().apply { if (next == null) remove(id) else put(id, next) })
+}
+
+/** Resolve display-registry device links, including entries without labels. */
+fun entityDeviceNames(registry: JsonObject, devices: JsonArray): Map<String, String> {
+    val names = devices.mapNotNull { it as? JsonObject }.associate {
+        it.text("id") to it.text("name_by_user").trim().ifEmpty { it.text("name").trim() }
+    }
+    return registry.array("entities").mapNotNull { it as? JsonObject }.mapNotNull { entry ->
+        val id = entry.text("ei")
+        val name = names[entry.text("di")]
+        if (id.isNotEmpty() && !name.isNullOrEmpty()) id to name else null
+    }.toMap()
 }

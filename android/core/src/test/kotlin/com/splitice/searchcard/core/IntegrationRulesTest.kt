@@ -44,6 +44,12 @@ class IntegrationRulesTest {
         assertEquals(setOf("light.a", "light.b"), priority)
         assertEquals(setOf("light.b"), hidden)
     }
+    @Test fun `device metadata resolves overrides fallback and absent links`() {
+        val registry = obj("""{"entities":[{"ei":"sensor.a","di":"a"},{"ei":"sensor.b","di":"b"},{"ei":"sensor.c"},{"ei":"sensor.d","di":"missing"}]}""")
+        val devices = JsonCodec.parseToJsonElement("""[{"id":"a","name":"Original","name_by_user":"Rumpus Motion"},{"id":"b","name":"Fallback","name_by_user":null}]""").jsonArray
+        assertEquals(mapOf("sensor.a" to "Rumpus Motion", "sensor.b" to "Fallback"), entityDeviceNames(registry, devices))
+        assertTrue(JsonCodec.decodeFromString<Snapshot>("{}").entityDeviceNames.isEmpty())
+    }
     @Test fun `snapshot reconciliation ignores old events and applies updates and removal`() {
         val current = obj("""{"light.a":{"state":"on","last_updated":"2026-01-01T00:00:02Z"}}""")
         val old = obj("""{"data":{"entity_id":"light.a","new_state":{"state":"off","last_updated":"2026-01-01T00:00:01Z"}}}""")
@@ -54,7 +60,7 @@ class IntegrationRulesTest {
         assertTrue(applyStateEvent(current, deletion).isEmpty())
     }
     @Test fun `offline snapshot roundtrips without authentication data`() {
-        val snapshot = Snapshot(config = card, states = obj("""{"light.a":{"state":"unavailable"}}"""), hidden = setOf("light.a"), savedAt = 1234)
+        val snapshot = Snapshot(config = card, states = obj("""{"light.a":{"state":"unavailable"}}"""), hidden = setOf("light.a"), savedAt = 1234, entityDeviceNames = mapOf("light.a" to "Rumpus Motion"))
         val encoded = JsonCodec.encodeToString(snapshot)
         assertEquals(snapshot, JsonCodec.decodeFromString<Snapshot>(encoded))
         assertFalse(encoded.contains("token"))

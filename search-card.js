@@ -111,6 +111,7 @@ customElements.whenDefined("card-tools").then(() => {
       this._hass = null;
       this._searchPriorityEntityIds = new Set();
       this._searchHiddenEntityIds = new Set();
+      this._entityDeviceNames = new Map();
       this._registryMetadataRequest = null;
       this._debouncedSearch = this._debounce((searchText) => {
         this._performSearch(searchText);
@@ -129,10 +130,11 @@ customElements.whenDefined("card-tools").then(() => {
       if (value?.connection !== oldHass?.connection) {
         this._searchPriorityEntityIds = new Set();
         this._searchHiddenEntityIds = new Set();
+        this._entityDeviceNames = new Map();
         this._registryMetadataRequest = null;
         this._refreshSearchLabelEntityIds();
       }
-      if (value?.panels !== oldHass?.panels && this._searchValue) {
+      if ((value?.panels !== oldHass?.panels || value?.connection !== oldHass?.connection) && this._searchValue) {
         this._performSearch(this._searchValue);
       }
     }
@@ -452,25 +454,25 @@ customElements.whenDefined("card-tools").then(() => {
     }
 
     _performSearch(searchText) {
-      if (!this.config || !this.hass || searchText === "") {
+      if (!this.config || !this.hass || !searchText.trim()) {
         this._results = [];
         this._activeActions = [];
         return;
       }
 
       try {
-        const searchRegex = new RegExp(searchText, "i");
+        const searchTerms = searchText.trim().toLowerCase().split(/\s+/u);
         const includedRegexes = this._compileRegexList(this.included_regex);
         const excludedRegexes = this._compileRegexList(this.excluded_regex);
-        const localServiceResults = this._getLocalServiceResults(searchRegex);
+        const localServiceResults = this._getLocalServiceResults(searchTerms);
         const entityResults = this._getEntityResults(
-          searchRegex,
+          searchTerms,
           includedRegexes,
           excludedRegexes
         );
 
         this._results = this._sortResults(
-          localServiceResults.concat(this._getNavigationResults(searchRegex), entityResults)
+          localServiceResults.concat(this._getNavigationResults(searchTerms), entityResults)
         );
         this._activeActions = this._getActivatedActions(searchText);
       } catch (err) {
@@ -489,6 +491,7 @@ customElements.whenDefined("card-tools").then(() => {
       if (!connection) {
         this._searchPriorityEntityIds = new Set();
         this._searchHiddenEntityIds = new Set();
+        this._entityDeviceNames = new Map();
         return;
       }
 
@@ -496,15 +499,18 @@ customElements.whenDefined("card-tools").then(() => {
       this._registryMetadataRequest = requestToken;
 
       try {
-        const [labels, entityRegistryDisplay] = await Promise.all([
-          connection.sendMessagePromise({
-            type: "config/label_registry/list",
-          }),
-          connection.sendMessagePromise({
-            type: "config/entity_registry/list_for_display",
-          }),
-        ]);
-
+        const [labels, entityRegistryDisplay, devices] = await Promise.all([
+          "config/label_registry/list",
+          "config/entity_registry/list_for_display",
+          "config/device_registry/list",
+        ].map(async (type) => {
+          try {
+            return await connection.sendMessagePromise({ type });
+          } catch (err) {
+            console.warn(`Search Card: unable to load ${type}`, err);
+            return null;
+          }
+        }));
         if (this._registryMetadataRequest !== requestToken) {
           return;
         }
@@ -533,6 +539,14 @@ customElements.whenDefined("card-tools").then(() => {
           }
         }
 
+        const deviceNames = new Map((Array.isArray(devices) ? devices : []).flatMap((device) => {
+          const name = (typeof device?.name_by_user === "string" && device.name_by_user.trim()) ||
+            (typeof device?.name === "string" && device.name.trim());
+          return typeof device?.id === "string" && name ? [[device.id, name]] : [];
+        }));
+        this._entityDeviceNames = new Map((entityRegistryDisplay?.entities || []).flatMap((entry) =>
+          typeof entry?.ei === "string" && deviceNames.has(entry.di)
+            ? [[entry.ei, deviceNames.get(entry.di)]] : []));
         this._searchPriorityEntityIds = searchPriorityEntityIds;
         this._searchHiddenEntityIds = searchHiddenEntityIds;
         if (this._searchValue) {
@@ -542,12 +556,13 @@ customElements.whenDefined("card-tools").then(() => {
         if (this._registryMetadataRequest === requestToken) {
           this._searchPriorityEntityIds = new Set();
           this._searchHiddenEntityIds = new Set();
+          this._entityDeviceNames = new Map();
         }
-        console.warn("Search Card: unable to load label metadata", err);
+        console.warn("Search Card: unable to load search metadata", err);
       }
     }
 
-    _getEntityResults(searchRegex, includedRegexes, excludedRegexes) {
+    _getEntityResults(searchTerms, includedRegexes, excludedRegexes) {
       const results = [];
 
       for (const entity_id in this.hass.states) {
@@ -558,7 +573,7 @@ customElements.whenDefined("card-tools").then(() => {
         ].filter((field) => typeof field === "string");
 
         if (
-          this._matchesAnyRegex(searchableFields, [searchRegex]) &&
+          this._matchesSearchTerms([...searchableFields, this._entityDeviceNames.get(entity_id)], searchTerms) &&
           this._matchesAnyRegex(searchableFields, includedRegexes) &&
           !this._matchesAnyRegex(searchableFields, excludedRegexes) &&
           !this._searchHiddenEntityIds.has(entity_id)
@@ -602,7 +617,7 @@ customElements.whenDefined("card-tools").then(() => {
       return result.type === "navigation" ? 2 : 3;
     }
 
-    _getNavigationResults(searchRegex) {
+    _getNavigationResults(searchTerms) {
       const seen = new Set();
       // hass.panels is the authenticated get_panels result, including dashboard registrations.
       return Object.values(this.hass.panels || {}).flatMap((panel) => {
@@ -616,23 +631,23 @@ customElements.whenDefined("card-tools").then(() => {
         const name = Object.hasOwn(PANEL_NAMES, panel.title) ? PANEL_NAMES[panel.title] : panel.title;
         const fields = [name, panel.title, panel.url_path,
           panel.component_name === "lovelace" ? "dashboard" : panel.component_name];
-        if (!fields.some((field) => typeof field === "string" && searchRegex.test(field))) return [];
+        if (!this._matchesSearchTerms(fields, searchTerms)) return [];
         return [{ type: "navigation", panel: { name, path,
           icon: (typeof panel.icon === "string" && panel.icon) ||
             (Object.hasOwn(PANEL_ICONS, panel.component_name) ? PANEL_ICONS[panel.component_name] : "mdi:view-dashboard") } }];
       }).sort((a, b) => a.panel.name.localeCompare(b.panel.name));
     }
 
-    _getLocalServiceResults(searchRegex) {
+    _getLocalServiceResults(searchTerms) {
       return this.local_services
-        .filter((service) => this._localServiceMatches(searchRegex, service))
+        .filter((service) => this._localServiceMatches(searchTerms, service))
         .map((service) => ({
           type: "local_service",
           service: service,
         }));
     }
 
-    _localServiceMatches(searchRegex, service) {
+    _localServiceMatches(searchTerms, service) {
       if (!service || !service.name || !service.url) {
         return false;
       }
@@ -641,9 +656,13 @@ customElements.whenDefined("card-tools").then(() => {
         service.aliases || []
       );
 
-      return searchableParts.some(
-        (part) => typeof part === "string" && part.search(searchRegex) >= 0
-      );
+      return this._matchesSearchTerms(searchableParts, searchTerms);
+    }
+
+    _matchesSearchTerms(fields, terms) {
+      const normalized = fields.filter((field) => typeof field === "string")
+        .map((field) => field.toLowerCase());
+      return terms.every((term) => normalized.some((field) => field.includes(term)));
     }
 
     _matchesAnyRegex(values, regexes) {

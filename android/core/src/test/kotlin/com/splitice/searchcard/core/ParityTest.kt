@@ -25,6 +25,7 @@ class ParityTest {
                 priority = input.array("priority").map { it.jsonPrimitive.content }.toSet(),
                 hidden = input.array("hidden").map { it.jsonPrimitive.content }.toSet(),
                 panels = input.obj("panels"),
+                entityDeviceNames = input.obj("entity_device_names").mapValues { it.value.jsonPrimitive.content },
             )
             val actual = SearchEngine().search(input.text("query"), snapshot)
             assertEquals(reference[index].jsonObject["output"], actual.toJson(), case.text("name"))
@@ -32,9 +33,9 @@ class ParityTest {
                 actual.results.filterIsInstance<SearchResult.Navigation>().map { it.panel.path }, case.text("name"))
         }
     }
-    @Test fun `unsupported patterns give useful errors`() {
+    @Test fun `typed regex punctuation is literal`() {
         for (query in listOf("(?i)lamp", "(?<named>lamp)", "a++", "[a-z&&[^x]]")) {
-            assertNotNull(SearchEngine().search(query, Snapshot()).error, query)
+            assertNull(SearchEngine().search(query, Snapshot()).error, query)
         }
     }
 }

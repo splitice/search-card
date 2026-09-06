@@ -73,7 +73,7 @@ test('query reset, keyboard selection, Escape, outside tap, and disconnect close
   expect(await page.evaluate(() => document.querySelectorAll(':popover-open').length)).toBe(0);
 });
 
-test('viewport resize keeps results reachable and empty/invalid queries dismiss', async ({ page }) => {
+test('viewport resize keeps results reachable and empty/unmatched queries dismiss', async ({ page }) => {
   await search(page);
   await page.setViewportSize({ width: 320, height: 360 });
   await expect.poll(async () => {
@@ -103,4 +103,48 @@ test('max_results sizes the initial popup without truncating matches', async ({ 
   await expect.poll(async () => (await popup.boundingBox()).height).toBeGreaterThan(small + 140);
   expect((await popup.boundingBox()).height).toBeLessThan(small + 190);
   await expect(page.locator('#count')).toHaveText('250 results');
+});
+
+test('device metadata refreshes word matches and isolates failures and old connections', async ({ page }) => {
+  await page.evaluate(async () => {
+    const card = window.card;
+    const states = {
+      'sensor.opaque': { attributes: { friendly_name: 'temperature' } },
+      'sensor.average': { attributes: { friendly_name: 'Rumpus Average Temperature' } },
+    };
+    const registry = { entities: [{ ei: 'sensor.opaque', di: 'device' }, { ei: 'sensor.average', lb: ['priority'] }] };
+    const devices = [{ id: 'device', name: 'Original', name_by_user: 'Rumpus Motion' }];
+    window.metadataConnection = (failed, deviceData = devices) => ({
+      sendMessagePromise: async ({ type }) => {
+        if (type === failed) throw new Error('Unavailable');
+        if (type.includes('entity_registry')) return registry;
+        if (type.includes('device_registry')) return deviceData;
+        return [{ label_id: 'priority', name: 'search_priority' }];
+      },
+    });
+    window.searchStates = states;
+    card._searchValue = 'Rumpus temp';
+    card.hass = { states, services: {}, connection: window.metadataConnection() };
+  });
+  await expect.poll(() => page.evaluate(() => window.card._results.map(r => r.entity_id)))
+    .toEqual(['sensor.average', 'sensor.opaque']);
+  await page.evaluate(() => {
+    window.card.hass = { states: window.searchStates, services: {}, connection: window.metadataConnection('config/device_registry/list') };
+  });
+  await expect.poll(() => page.evaluate(() => [window.card._results.map(r => r.entity_id), [...window.card._searchPriorityEntityIds]]))
+    .toEqual([['sensor.average'], ['sensor.average']]);
+  await page.evaluate(() => {
+    window.card.hass = { states: window.searchStates, services: {}, connection: window.metadataConnection('config/label_registry/list', [{ id: 'device', name: 'Rumpus Motion' }]) };
+  });
+  await expect.poll(() => page.evaluate(() => window.card._entityDeviceNames.get('sensor.opaque'))).toBe('Rumpus Motion');
+  await page.evaluate(async () => {
+    const pending = [];
+    window.card.hass = { states: window.searchStates, services: {}, connection: { sendMessagePromise: () => new Promise(resolve => pending.push(resolve)) } };
+    window.card.hass = { states: window.searchStates, services: {} };
+    pending.forEach(resolve => resolve([]));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await expect.poll(() => page.evaluate(() => window.card._entityDeviceNames.size)).toBe(0);
+  await expect.poll(() => page.evaluate(() => window.card._results.map(r => r.entity_id))).toEqual(['sensor.average']);
 });
