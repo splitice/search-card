@@ -146,13 +146,13 @@ jobs:
           system-image-api-level: '37.1'
           target: google_apis_ps16k
           arch: x86_64
-          emulator-build: '16195039' # Emulator 37.2.7
+          emulator-build: '15917651' # Emulator 37.1.11 stable
           profile: pixel_2
           ram-size: 4096M
           heap-size: 512M
           disk-size: 8G
           disable-linux-hw-accel: false
-          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -accel on -no-metrics -show-kernel
+          emulator-options: -no-window -gpu software -no-snapshot -noaudio -no-boot-anim -accel on -no-metrics -show-kernel
           disable-animations: true
           pre-emulator-launch-script: mkdir -p android/device-diagnostics; nohup timeout 1200 adb logcat -b all -v threadtime > android/device-diagnostics/logcat.txt 2>&1 &
           script: |
@@ -165,5 +165,5 @@ jobs:
           name: device-reports-api-37
           path: |
             android/app/build/reports/androidTests/
-            android/app/build/outputs/androidTest-results/
+            android/app/build/outputs/androidTest-results/**/*.xml
             android/device-diagnostics/
