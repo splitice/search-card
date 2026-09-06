@@ -4,11 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.splitice.searchcard.core.*
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
-import okhttp3.OkHttpClient
 
 data class PanelState(
     val snapshot: Snapshot? = null,
@@ -30,10 +28,7 @@ internal fun initialPanelState(hasDashboard: Boolean, hasSession: Boolean): Pane
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
     val storage = Storage(application)
-    private val http = OkHttpClient.Builder().retryOnConnectionFailure(false)
-        .followRedirects(false).followSslRedirects(false)
-        .pingInterval(30, TimeUnit.SECONDS)
-        .connectTimeout(15, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).build()
+    private val http = foregroundHttpClient()
     private val tokens = TokenClient(http)
     private var accessToken: String? = null
     private var accessExpires = 0L
@@ -167,7 +162,6 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         socket?.close()
         socket = null
         http.dispatcher.cancelAll()
-        http.connectionPool.evictAll()
         state.update { it.copy(connected = false, choices = emptyList(), busyActions = emptySet()) }
     }
     fun refresh() { stop(); start() }
@@ -234,7 +228,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             session.request("call_service", fields)
         }
     }
-    override fun onCleared() { stop(); http.dispatcher.cancelAll(); http.connectionPool.evictAll() }
+    override fun onCleared() { stop() }
 
     private fun clearWebLogin() {
         android.webkit.CookieManager.getInstance().removeAllCookies(null)

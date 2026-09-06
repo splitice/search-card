@@ -2,6 +2,7 @@ package com.splitice.searchcard
 
 import com.splitice.searchcard.core.*
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
@@ -13,6 +14,15 @@ import okhttp3.*
 
 class LoginRequired : IOException("Please sign in to Home Assistant again.")
 class HaCommandError(message: String) : IOException(message)
+
+/** TLS close can write close_notify. Release HTTP sockets on OkHttp's response worker,
+ * rather than keeping idle connections that would need eviction from Activity.onStop. */
+internal fun foregroundHttpClient(): OkHttpClient = OkHttpClient.Builder()
+    .connectionPool(ConnectionPool(0, 1, TimeUnit.SECONDS))
+    .retryOnConnectionFailure(false)
+    .followRedirects(false).followSslRedirects(false)
+    .pingInterval(30, TimeUnit.SECONDS)
+    .connectTimeout(15, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).build()
 
 /** Consume and close the response on OkHttp's worker, keeping body reads cancellable. */
 private suspend fun <T> Call.awaitResponse(consume: (Response) -> T): T = suspendCancellableCoroutine { continuation ->

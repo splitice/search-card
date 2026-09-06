@@ -16,6 +16,17 @@ import okio.buffer
 
 class HomeAssistantTest {
     private val http = OkHttpClient.Builder().retryOnConnectionFailure(false).build()
+    @Test fun `foreground client releases HTTP connections before the panel can stop`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""{"access_token":"access","refresh_token":"refresh","expires_in":1800}"""))
+            val client = foregroundHttpClient()
+            val response = TokenClient(client).exchange(server.url("").toString().trimEnd('/'), "authorization_code", "code")
+            assertEquals("access", response.text("access_token"))
+            assertEquals(0, client.connectionPool.idleConnectionCount())
+            assertEquals(0, client.connectionPool.connectionCount())
+        }
+    }
+
     @Test fun `authorization response body is never read on the calling UI thread`() {
         Executors.newSingleThreadExecutor { Thread(it, "login-test-ui") }.asCoroutineDispatcher().use { ui ->
             MockWebServer().use { server ->
